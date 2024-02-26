@@ -1,0 +1,9 @@
+brace_style = "AlwaysNextLine"
+control_brace_style = "AlwaysNextLine"
+enum_discrim_align_threshold = 15
+format_strings = true
+group_imports = "StdExternalCrate"
+imports_granularity = "Crate"
+match_arm_leading_pipes = "Always"
+max_width = 150
+struct_field_align_threshold = 15
