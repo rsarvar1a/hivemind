@@ -6,6 +6,7 @@ impl Board
     /// Checks whether the bug can move as itself.
     pub(super) fn check_motion(&self, piece: &Piece, to: Hex) -> Result<()>
     {
+        self.ensure_correct_player(piece)?;
         let from = self.pieces[piece.index() as usize].unwrap();
         self.check_motion_as(piece.kind, from, to)
     }

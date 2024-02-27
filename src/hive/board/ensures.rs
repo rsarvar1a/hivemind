@@ -22,7 +22,7 @@ impl Board
         let to_move = self.to_move();
         if piece.player != to_move
         {
-            let err = Error::new(Kind::InvalidState, format!("Cannot place a {} bug on {}'s turn.", piece.player, to_move));
+            let err = Error::new(Kind::InvalidState, format!("Cannot place or directly move a {} bug on {}'s turn.", piece.player, to_move));
             return Err(err);
         }
         Ok(())

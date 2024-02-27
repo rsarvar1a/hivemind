@@ -15,15 +15,7 @@ mod base
     }
 
     #[test]
-    fn first_move_ok_white()
-    {
-        let _setup = setup::setup();
-        let raw_string = r"Base;InProgress;Black[1];wA1";
-        templates::run_game(raw_string);
-    }
-
-    #[test]
-    fn first_move_ok_black()
+    fn first_placements_ok()
     {
         let _setup = setup::setup();
         let raw_string = r"Base;InProgress;White[2];wA1;bS1 /wA1";
@@ -85,7 +77,7 @@ mod base
 
     #[test]
     #[should_panic]
-    fn queen_on_first_move_white()
+    fn queen_on_first_move()
     {
         let _setup = setup::setup();
         let raw_string = r"Base;InProgress;Black[1];wQ";
@@ -94,10 +86,10 @@ mod base
 
     #[test]
     #[should_panic]
-    fn queen_on_first_move_black()
+    fn queen_by_fourth_move()
     {
         let _setup = setup::setup();
-        let raw_string = r"Base;InProgress;White[2];wA1;bQ wA1-";
+        let raw_string = r"Base;InProgress;Black[4];wA1;bA1 wA1\;wG1 \wA1;bG1 bA1\;wB1 \wG1;bB1 bG1\;wS1 \wB1";
         templates::run_game(raw_string);
     }
 
