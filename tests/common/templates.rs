@@ -1,7 +1,7 @@
 use hivemind::prelude::*;
 
 /// Runs a game, and checks for both gamestring validity and state mismatch.
-pub fn run_game(raw_string: &'static str)
+pub fn run_game(raw_string: &'static str) -> Board
 {
     // Ensure the game string is valid.
 
@@ -22,6 +22,8 @@ pub fn run_game(raw_string: &'static str)
     let turn: Turn = board.turn().into();
     let turn_string: TurnString = turn.into();
     assert_eq!(turn_string.as_ref(), turn_string_str);
+
+    board
 }
 
 /// Splits a gamestring (assumed syntactically valid) into parts.

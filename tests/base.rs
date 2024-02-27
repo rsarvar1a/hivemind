@@ -52,8 +52,7 @@ mod base
     fn disjoint_perimeters_ok()
     {
         let _setup = setup::setup();
-        let raw_string =
-            r"Base;InProgress;Black[7];wG1;bG1 wG1\;wQ -wG1;bQ /bG1;wA1 \wG1;bA1 /bQ;wG2 -wA1;bA2 -bA1;wG3 /wG2;bA3 -bA2;wA2 /wG3;bS1 /bA3;wQ wG3\";
+        let raw_string = r"Base;InProgress;Black[7];wG1;bG1 wG1\;wQ -wG1;bQ /bG1;wA1 \wG1;bA1 /bQ;wG2 -wA1;bA2 -bA1;wG3 /wG2;bA3 -bA2;wA2 /wG3;bS1 /bA3;wQ wG3\";
         templates::run_game(raw_string);
     }
 
@@ -71,7 +70,7 @@ mod base
     fn no_expansion_bugs()
     {
         let _setup = setup::setup();
-        let raw_string = "Base;InProgress;Black[1];wL";
+        let raw_string = r"Base;InProgress;Black[1];wL";
         templates::run_game(raw_string);
     }
 
@@ -80,7 +79,7 @@ mod base
     fn placed_on_top()
     {
         let _setup = setup::setup();
-        let raw_string = "Base;InProgress;White[2];wA1;bS1 wA1";
+        let raw_string = r"Base;InProgress;White[2];wA1;bS1 wA1";
         templates::run_game(raw_string);
     }
 
@@ -89,7 +88,7 @@ mod base
     fn queen_on_first_move_white()
     {
         let _setup = setup::setup();
-        let raw_string = "Base;InProgress;Black[1];wQ";
+        let raw_string = r"Base;InProgress;Black[1];wQ";
         templates::run_game(raw_string);
     }
 
@@ -98,7 +97,23 @@ mod base
     fn queen_on_first_move_black()
     {
         let _setup = setup::setup();
-        let raw_string = "Base;InProgress;White[2];wA1;bQ wA1-";
+        let raw_string = r"Base;InProgress;White[2];wA1;bQ wA1-";
+        templates::run_game(raw_string);
+    }
+
+    #[test]
+    fn multi_height_hop()
+    {
+        let _setup = setup::setup();
+        let raw_string = r"Base;InProgress;Black[6];wG1;bG1 wG1\;wQ \wG1;bQ /bG1;wA1 -wQ;bB1 bG1\;wB1 wA1\;bB1 bG1;wB1 /wG1;bB1 wG1;wB1 bB1";
+        templates::run_game(raw_string);
+    }
+
+    #[test]
+    fn draw()
+    {
+        let _setup = setup::setup();
+        let raw_string = r"Base;Draw;Black[8];wS1;bS1 wS1\;wQ -wS1;bQ /bS1;wG1 \wS1;bG1 bS1\;wB1 -wG1;bB1 bQ\;wA1 /wQ;bA1 /bQ;wS2 /wB1;bA1 wA1\;wG2 \wB1;bG2 bA1\;wG2 wQ\";
         templates::run_game(raw_string);
     }
 }
