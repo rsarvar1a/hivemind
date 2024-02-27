@@ -2,7 +2,7 @@ mod common;
 use common::*;
 
 #[cfg(test)]
-mod base_lmp
+mod expansions
 {
     use super::*;
 
