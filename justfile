@@ -18,6 +18,7 @@ gdb:
 
 run:
     just build \
+    && touch .env \
     && target/release/hivemind
 
 test:

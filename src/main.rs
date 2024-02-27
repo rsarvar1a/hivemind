@@ -10,11 +10,21 @@ fn main() -> Result<()>
     // Parse the cli options.
     let options = UhpOptions::parse();
 
+    // Choose the logging type based on build type.
+    let log_format = if cfg!(debug_assertions)
+    {
+        AdaptiveFormat::WithThread
+    }
+    else
+    {
+        AdaptiveFormat::Default
+    };
+
     // Set the logger to write-and-flush so that it doesn't compete with worker threads.
     let _logger = Logger::try_with_env_or_str(options.log_level.clone())?
         .write_mode(WriteMode::BufferAndFlush)
         .log_to_stderr()
-        .adaptive_format_for_stderr(AdaptiveFormat::WithThread)
+        .adaptive_format_for_stderr(log_format)
         .set_palette("b196;208;195;111;67".to_owned())
         .start()?;
 

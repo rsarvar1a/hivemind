@@ -86,7 +86,7 @@ impl<'a, E: Evaluator<'a>> Server<'a, E>
         {
             | Ok(_) =>
             {
-                log::info!("Command: {cmd} ({})", args.join(" "));
+                log::debug!("Command completed successfully: {cmd} {}", args.join(" "));
                 self.ok()
             }
             | Err(err) => match err.fatal()
