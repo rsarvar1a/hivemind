@@ -3,24 +3,25 @@ use crate::prelude::*;
 #[derive(Clone, Debug, Default)]
 /// An evaluator with absolutely no policy.
 ///
-/// This evaluator is only useful for lazy move generation, and should **not** be used for anything else!
-pub struct BasicEvaluator<'a>
-{
-    _marker: std::marker::PhantomData<&'a Self>,
-}
+/// This evaluator is only useful for move generation, and should **not** be used for anything else!
+pub struct BasicEvaluator;
 
-impl<'a> Evaluator<'a> for BasicEvaluator<'a>
+impl Evaluator for BasicEvaluator
 {
-    type Generator = BasicMoveGenerator<'a>;
+    type Generator = BasicMoveGenerator;
 
-    fn best_move(&self, _board: &Board, _args: SearchArgs) -> Move
+    fn best_move(&mut self, board: &Board, _args: SearchArgs) -> Move
     {
-        // This one is *really** not implemented. Don't use it!
-        let _ = Error::not_implemented();
-        Move::Pass
+        let mut movegen = self.generate_moves(board);
+
+        match movegen.next()
+        {
+            | Some(mv) => mv,
+            | None => Move::Pass,
+        }
     }
 
-    fn generate_moves(&self, board: &'a Board) -> Self::Generator
+    fn generate_moves(&self, board: &Board) -> Self::Generator
     {
         BasicMoveGenerator::new(board)
     }
@@ -31,26 +32,32 @@ impl<'a> Evaluator<'a> for BasicEvaluator<'a>
     }
 }
 
-/// A lazy iterator with no policy whatsoever.
-pub struct BasicMoveGenerator<'a>
+/// A move generator with no policy whatsoever. It is also not lazy!
+pub struct BasicMoveGenerator
 {
-    board: &'a Board,
+    moves: Vec<Move>,
+    index: usize
 }
 
-impl<'a> Iterator for BasicMoveGenerator<'a>
+impl Iterator for BasicMoveGenerator
 {
     type Item = Move;
     fn next(&mut self) -> Option<Move>
     {
-        Error::not_implemented();
-        None
+        let next = self.moves.get(self.index);
+        self.index += 1;
+        next.copied()
     }
 }
 
-impl<'a> BasicMoveGenerator<'a>
+impl BasicMoveGenerator
 {
-    fn new(board: &'a Board) -> Self
+    pub fn new(board: &Board) -> Self
     {
-        BasicMoveGenerator { board }
+        BasicMoveGenerator
+        {
+            moves: board.generate_moves(),
+            index: 0
+        }
     }
 }

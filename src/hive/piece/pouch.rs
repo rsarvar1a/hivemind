@@ -41,6 +41,12 @@ impl Pouch
         &self.pieces[player as usize]
     }
 
+    /// Peeks the next bug.
+    pub fn next(&self, player: Player, kind: Bug) -> Option<Piece>
+    {
+        self.peek(player, kind).map(|num| Piece { player, kind, num })
+    }
+
     /// Returns the lowest discriminator left for the given piece type.
     pub fn peek(&self, player: Player, kind: Bug) -> Option<u8>
     {

@@ -4,6 +4,7 @@ use regex::Regex;
 
 use crate::prelude::*;
 
+#[derive(Clone, Copy, Debug)]
 /// Options with which the user can control an Evaluator's search.
 pub enum SearchArgs
 {

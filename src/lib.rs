@@ -5,7 +5,6 @@
 pub(crate) mod agent;
 pub(crate) mod error;
 pub mod hive;
-pub(crate) mod options;
 pub(crate) mod uhp;
 
 #[allow(unused)]
@@ -19,7 +18,6 @@ pub mod prelude
         agent::*,
         error::{Error, Kind, Result},
         hive::*,
-        options::*,
         uhp::{Server, UhpOptions},
     };
 }

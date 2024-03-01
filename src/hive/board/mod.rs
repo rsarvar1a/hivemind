@@ -1,9 +1,10 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, hash::Hash};
 
 use crate::prelude::*;
 
 mod checks;
 mod ensures;
+mod generate;
 mod history;
 mod printers;
 mod state;
@@ -46,6 +47,9 @@ pub struct Board
 
     /// THe locations of each piece for shorthand purposes.
     pieces: [Option<Hex>; PIECES],
+
+    /// The set of pinned hexes.
+    pinned: HashSet<Hex>,
 
     /// Stores the pieces that have not yet been put on the board.
     pouch: Pouch,
@@ -159,6 +163,18 @@ impl Board
         &self.field
     }
 
+    /// Generates all valid moves in the position, not including Pass.
+    pub fn generate_moves(&self) -> Vec<Move>
+    {
+        let mut moves: Vec<Move> = Vec::new();
+        
+        self.generate_placements_into(&mut moves);
+        self.generate_moves_into(&mut moves);
+        self.generate_throws_into(& mut moves);
+        
+        moves
+    }
+
     /// Gets the history of this game.
     pub fn history(&self) -> &History
     {
@@ -171,13 +187,39 @@ impl Board
         self.immune
     }
 
+    /// Determines if the given hex is pinned.
+    pub fn is_pinned(&self, piece: &Piece) -> bool
+    {
+        let Some(hex) = self.pieces[piece.index() as usize]
+        else 
+        {
+            return false;
+        };
+        
+        let stack = self.stacks[hex as usize];
+        let token = self.top(hex).unwrap();
+        
+        if token != *piece
+        {
+            true
+        }
+        else if stack.height() > 1
+        {
+            false
+        }
+        else // stack.height() == 1
+        {
+            self.pinned.contains(&hex)    
+        }
+    }
+
     /// Returns the pieces neighbouring a given hex.
     pub fn neighbours(&self, hex: Hex) -> HashSet<Piece>
     {
         self.field
             .neighbours(hex)
             .into_iter()
-            .filter_map(|h| Into::<Option<Piece>>::into(self.stacks[h as usize].top()))
+            .filter_map(|h| self.top(h))
             .collect::<HashSet<Piece>>()
     }
 
@@ -188,8 +230,9 @@ impl Board
             field: Field::default(),
             history: History::default(),
             immune: None,
-            pieces: [None; PIECES],
             options,
+            pieces: [None; PIECES],
+            pinned: HashSet::default(),
             pouch: Pouch::new(options),
             stacks: [Stack::default(); SIZE],
             stunned: None,
@@ -237,7 +280,7 @@ impl Board
     {
         hex::neighbours(hex)
             .into_iter()
-            .filter_map(|hex| self.stacks[hex as usize].top().into())
+            .filter_map(|hex| self.top(hex))
             .collect()
     }
 
@@ -337,6 +380,12 @@ impl Board
         turn.player
     }
 
+    /// Gets the piece visible at the top of the given stack.
+    pub fn top(&self, hex: Hex) -> Option<Piece>
+    {
+        self.stacks[hex as usize].top().into()
+    }
+
     /// Gets the turn number, which is the number of moves already played.
     ///
     /// The turn number on a new board is therefore 0, which maps to `White[1]` as a turn string.
@@ -409,6 +458,9 @@ impl Board
             {}
         };
 
+        // Recalculate the pins.
+        self.pinned = self.field.find_pins();
+
         // Find the last hex moved to (which might be None) and reset the immunity and stun states.
         self.undo_immune()?;
         self.undo_stun()?;
@@ -473,7 +525,7 @@ impl Board
 
         let from = self.pieces[piece.index() as usize].unwrap();
 
-        self.field.ensure_one_hive(piece, from).map_err(|err| err.chain(base.clone()))?;
+        self.ensure_one_hive(piece).map_err(|err| err.chain(base.clone()))?;
         self.check_motion(piece, hex)
             .or_else(|mv_err| self.check_throw(from, hex).map_err(|err| err.chain(mv_err.chain(base))))
     }
@@ -514,9 +566,7 @@ impl Board
 
         self.ensure_placed(piece).map_err(|err| err.chain(base.clone()))?;
         self.ensure_on_top(piece).map_err(|err| err.chain(base.clone()))?;
-
-        let from = self.pieces[piece.index() as usize].unwrap();
-        self.field.ensure_one_hive(piece, from).map_err(|err| err.chain(base))?;
+        self.ensure_one_hive(piece).map_err(|err| err.chain(base))?;
 
         Ok(())
     }
@@ -668,6 +718,9 @@ impl Board
                 self.set_immune(None);
             }
         };
+
+        // Recalculate the pins.
+        self.pinned = self.field.find_pins();
 
         // Update the history.
         self.history.play(entry);

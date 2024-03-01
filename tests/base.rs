@@ -44,7 +44,8 @@ mod base
     fn disjoint_perimeters_ok()
     {
         let _setup = setup::setup();
-        let raw_string = r"Base;InProgress;Black[7];wG1;bG1 wG1\;wQ -wG1;bQ /bG1;wA1 \wG1;bA1 /bQ;wG2 -wA1;bA2 -bA1;wG3 /wG2;bA3 -bA2;wA2 /wG3;bS1 /bA3;wQ wG3\";
+        let raw_string =
+            r"Base;InProgress;Black[7];wG1;bG1 wG1\;wQ -wG1;bQ /bG1;wA1 \wG1;bA1 /bQ;wG2 -wA1;bA2 -bA1;wG3 /wG2;bA3 -bA2;wA2 /wG3;bS1 /bA3;wQ wG3\";
         templates::run_game(raw_string);
     }
 

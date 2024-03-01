@@ -155,41 +155,6 @@ impl Field
         }
     }
 
-    /// Ensures that a movement between two hexes satisfies the one hive principle.
-    ///
-    /// This is true if:
-    /// 1. removing the from-hex results in a connected graph.
-    pub fn ensure_one_hive(&self, piece: &Piece, from: Hex) -> Result<()>
-    {
-        if !self.contains(from)
-        {
-            // The field maintains the one hive principle as an invariant,
-            // so if this hex is not in the hive, removing it would not break the invariant.
-            // A good board implementation means this check is useless, since we would never
-            // check the one hive principle on a move for a piece not in the hive, but it is
-            // a really useful short-circuit.
-            Ok(())
-        }
-        else if *self.map.get(&from).unwrap() > 1
-        {
-            // If the height of the stack is greater than 1, we can never break the principle
-            // in this manner, like for beetle or mosquito-beetle moves.
-            Ok(())
-        }
-        else if !self.find_pins().contains(&from)
-        {
-            Ok(())
-        }
-        else
-        {
-            let axial = Axial::from(from);
-            Err(Error::new(
-                Kind::OneHivePrinciple,
-                format!("Piece {} started at hex {} and is pinned by the one hive principle.", piece, axial),
-            ))
-        }
-    }
-
     /// Ensures an ant or spider move is possible for a given limit.
     pub fn ensure_perimeter_crawl(&self, from: Hex, to: Hex, distance: Option<u8>) -> Result<()>
     {
@@ -402,7 +367,7 @@ impl Field
 /// In particular, condition 3. removes hexes that are inaccessible,
 /// either because they are totally surrounded, or because they are
 /// locked behind gates.
-pub struct Perimeter(pub(super) Field, pub(super) Field);
+pub struct Perimeter(pub Field, pub Field);
 
 impl From<Perimeter> for Field
 {
@@ -511,7 +476,7 @@ impl Perimeter
 
         for neighbour in self.0.neighbours(from)
         {
-            if ! state.visited.contains(&neighbour)
+            if !state.visited.contains(&neighbour)
                 && self.1.ensure_freedom_to_move(from, neighbour, false).is_ok()
                 && self.1.ensure_constant_contact(from, neighbour, false).is_ok()
             {

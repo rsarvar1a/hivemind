@@ -13,25 +13,27 @@ pub struct UhpOptions
     #[arg(short, long, default_value = "info")]
     /// lowest log level to show
     pub log_level: String,
+
+    #[arg(short, long, default_value_t = 4)]
+    /// number of search threads
+    pub num_threads: usize,
 }
 
-pub struct Server<'a, E>
+pub struct Server<E>
 where
-    E: Evaluator<'a>,
+    E: Evaluator,
 {
-    marker:    std::marker::PhantomData<&'a Self>,
     options:   UhpOptions,
     board:     Option<Board>,
     evaluator: E,
 }
 
-impl<'a, E: Evaluator<'a>> Server<'a, E>
+impl<E: Evaluator> Server<E>
 {
     /// Creates a new server with the given capabilities.
     pub fn new(options: UhpOptions) -> Self
     {
         Server {
-            marker:    std::marker::PhantomData,
             options:   options.clone(),
             board:     None,
             evaluator: E::new(options),
@@ -57,7 +59,7 @@ impl<'a, E: Evaluator<'a>> Server<'a, E>
     }
 }
 
-impl<'a, E: Evaluator<'a>> Server<'a, E>
+impl<E: Evaluator> Server<E>
 {
     /// Matches the command to the server's functionality.
     fn apply(&mut self, cmd: &str, args: &[&str]) -> Result<()>
@@ -75,12 +77,6 @@ impl<'a, E: Evaluator<'a>> Server<'a, E>
             | "validmoves" => self.valid_moves(),
             | _ => Err(Error::new(Kind::UnrecognizedCommand, cmd.into())),
         };
-
-        if let Some(board) = self.board.as_ref()
-        {
-            log::trace!("Board: \n{:#?}\n", board);
-            log::debug!("Board: \n{}\n", board);
-        }
 
         match result
         {
@@ -106,11 +102,11 @@ impl<'a, E: Evaluator<'a>> Server<'a, E>
     }
 
     /// Returns the best move available in this position (for the player to move).
-    fn best_move(&self, args: &[&str]) -> Result<()>
+    fn best_move(&mut self, args: &[&str]) -> Result<()>
     {
         let search_args = SearchArgs::parse(args)?;
         let board = self.ensure_started()?;
-        let mv = self.evaluator.best_move(board, search_args);
+        let mv = self.evaluator.best_move(&board.clone(), search_args);
 
         println!("{}", Into::<MoveString>::into(mv));
         Ok(())

@@ -24,6 +24,9 @@ const OFFSET_STUN_VALID: usize = 0x62;
 const OFFSET_PLAYER: usize = 0x60;
 const EXTENT_PLAYER: u128 = 0x1;
 
+const EXTENT_HEX: usize = u16::MAX as usize;
+const EXTENT_OPT: usize = 1;
+
 lazy_static! {
     /// A *BIG* table of bitstrings used by the Zobrist calculations.
     ///
@@ -74,8 +77,12 @@ impl ZobristTable
     /// Sets the last destination to the given hex to track pillbug immunity.
     pub fn last(&mut self, to: Option<Hex>) -> &mut Self
     {
+        self.current &= (!(EXTENT_HEX as u128)).rotate_left(OFFSET_LAST as u32);
         self.current |= (to.unwrap_or(0) as u128) << OFFSET_LAST;
+
+        self.current &= (!(EXTENT_OPT as u128)).rotate_left(OFFSET_LAST_VALID as u32);
         self.current |= (to.is_some() as u128) << OFFSET_LAST_VALID;
+
         self
     }
 
@@ -103,8 +110,12 @@ impl ZobristTable
     /// Sets the stun destination to track the hex last touched by the Pillbug.
     pub fn stun(&mut self, to: Option<Hex>) -> &mut Self
     {
+        self.current &= (!(EXTENT_HEX as u128)).rotate_left(OFFSET_STUN as u32);
         self.current |= (to.unwrap_or(0) as u128) << OFFSET_STUN;
+
+        self.current &= (!(EXTENT_OPT as u128)).rotate_left(OFFSET_STUN_VALID as u32);
         self.current |= (to.is_some() as u128) << OFFSET_STUN_VALID;
+
         self
     }
 }

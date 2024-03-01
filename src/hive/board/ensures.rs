@@ -22,7 +22,10 @@ impl Board
         let to_move = self.to_move();
         if piece.player != to_move
         {
-            let err = Error::new(Kind::InvalidState, format!("Cannot place or directly move a {} bug on {}'s turn.", piece.player, to_move));
+            let err = Error::new(
+                Kind::InvalidState,
+                format!("Cannot place or directly move a {} bug on {}'s turn.", piece.player, to_move),
+            );
             return Err(err);
         }
         Ok(())
@@ -104,6 +107,17 @@ impl Board
                 format!("Hex {} is already occupied by the stack ending in {}.", axial, piece_at_stack),
             );
             return Err(err);
+        }
+        Ok(())
+    }
+
+    #[inline]
+    pub(super) fn ensure_one_hive(&self, piece: &Piece) -> Result<()>
+    {
+        // We need to exclude stacked positions.
+        if self.is_pinned(piece)
+        {
+            return Err(Error::new(Kind::OneHivePrinciple, format!("Piece {} is pinned by the one hive principle.", piece)));
         }
         Ok(())
     }

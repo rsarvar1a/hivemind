@@ -1,9 +1,12 @@
-mod consts
+use crate::prelude::*;
+
+pub mod consts
 {
-    pub const MINIMUM_WIN: i32 = i16::MAX as i32;
+    use super::*;
+    pub const MINIMUM_WIN: i32 = i16::MAX as i32 - scalars::MAXIMUM_PLY as i32;
 }
 
-use consts::*;
+pub use consts::*;
 
 /// Embed the ply into winning or losing scores.
 pub fn normalize(score: i32, ply: usize) -> i32
