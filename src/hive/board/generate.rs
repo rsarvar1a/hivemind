@@ -1,7 +1,5 @@
 use std::collections::HashSet;
 
-use itertools::Itertools;
-
 use crate::prelude::*;
 
 impl Board
@@ -135,7 +133,7 @@ impl Board
         {
             HashSet::from(hex::neighbours(hex::consts::ROOT))
         }
-        else 
+        else
         {
             let to_move = self.to_move();
             self.pieces
@@ -145,7 +143,7 @@ impl Board
                 // Get all of their neighbours.
                 .flat_map(|h| hex::neighbours(h))
                 // Remove any neighbour that's occupied or that has an unfriendly neighbour.
-                .filter(|h| (!self.occupied(*h)) && self.neighbours(*h).iter().any(|p| p.player != to_move))
+                .filter(|h| !self.occupied(*h) && !self.neighbours(*h).iter().any(|p| p.player != to_move))
                 // Take uniques.
                 .collect()
         }
@@ -176,7 +174,7 @@ impl Board
         let from = self.pieces[piece.index() as usize].unwrap();
         hex::neighbours(from)
             .iter()
-            // Drop impossible destinations. 
+            // Drop impossible destinations.
             .filter(|to| !self.occupied(**to))
             // Drop movements that don't end at ground level.
             .filter(|to| self.ensure_ground_movement(from, **to).is_ok())
@@ -241,25 +239,25 @@ impl Board
     fn generate_grasshopper(&self, piece: &Piece, moves: &mut Vec<Move>)
     {
         let from = self.pieces[piece.index() as usize].unwrap();
-        Direction::all()
-            .iter()
-            .for_each(|direction| {
-                let mut to = from + *direction;
-                // Keep jumping in the same direction until we land in an empty hex.
-                while ! self.occupied(to)
-                {
-                    to = to + *direction; 
-                }
-                let reference = self.reference(to).unwrap();
-                moves.push(Move::Move(*piece, reference));
-            });
+        Direction::all().iter().for_each(|direction| {
+            let mut to = from + *direction;
+            // Keep jumping in the same direction until we land in an empty hex.
+            while !self.occupied(to)
+            {
+                to = to + *direction;
+            }
+            let reference = self.reference(to).unwrap();
+            moves.push(Move::Move(*piece, reference));
+        });
     }
 
     /// Generates ladybug movements.
     fn generate_ladybug(&self, piece: &Piece, moves: &mut Vec<Move>)
     {
         let from = self.pieces[piece.index() as usize].unwrap();
-        let to = self.field.neighbours(from)
+        let to = self
+            .field
+            .neighbours(from)
             .into_iter()
             // Get onto the hive with the first movement, only selecting in-hive neighbours.
             .filter_map(|onto| self.ensure_crawl(from, onto, false).map(|_| (onto, self.field.neighbours(onto))).ok())
@@ -279,7 +277,7 @@ impl Board
             .filter_map(|(_, ontop, to)| self.ensure_crawl(ontop, to, true).map(|_| to).ok())
             // Take uniques.
             .collect::<HashSet<Hex>>();
-    
+
         to.iter().for_each(|to| {
             let reference = self.reference(*to).unwrap();
             moves.push(Move::Move(*piece, reference));
@@ -294,7 +292,8 @@ impl Board
 
         if height == 1
         {
-            self.pieces_neighbouring(from).iter()
+            self.pieces_neighbouring(from)
+                .iter()
                 // The mosquito cannot move through the ability stolen by a neighbouring mosquito.
                 .filter(|piece| piece.kind != Bug::Mosquito)
                 // Generate moves for each piece as if the mosquito stole its type.
@@ -302,9 +301,9 @@ impl Board
                     self.generate_moves_for_kind(piece, moving_as.kind, moves);
                 });
         }
-        else 
+        else
         {
-            self.generate_beetle(piece, moves);    
+            self.generate_beetle(piece, moves);
         }
     }
 

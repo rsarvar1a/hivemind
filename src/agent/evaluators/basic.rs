@@ -12,7 +12,7 @@ impl Evaluator for BasicEvaluator
 
     fn best_move(&mut self, board: &Board, _args: SearchArgs) -> Move
     {
-        let mut movegen = self.generate_moves(board);
+        let mut movegen = Self::generate_moves(board);
 
         match movegen.next()
         {
@@ -21,7 +21,7 @@ impl Evaluator for BasicEvaluator
         }
     }
 
-    fn generate_moves(&self, board: &Board) -> Self::Generator
+    fn generate_moves(board: &Board) -> Self::Generator
     {
         BasicMoveGenerator::new(board)
     }
@@ -36,7 +36,7 @@ impl Evaluator for BasicEvaluator
 pub struct BasicMoveGenerator
 {
     moves: Vec<Move>,
-    index: usize
+    index: usize,
 }
 
 impl Iterator for BasicMoveGenerator
@@ -54,10 +54,13 @@ impl BasicMoveGenerator
 {
     pub fn new(board: &Board) -> Self
     {
-        BasicMoveGenerator
+        let mut moves = board.generate_moves();
+
+        if moves.is_empty()
         {
-            moves: board.generate_moves(),
-            index: 0
+            moves.push(Move::Pass);
         }
+
+        BasicMoveGenerator { moves, index: 0 }
     }
 }

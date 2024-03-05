@@ -2,12 +2,12 @@ use crate::prelude::*;
 
 pub mod evaluators;
 pub mod scalars;
-pub mod search;
+pub mod searchargs;
 pub mod table;
 pub mod variation;
 
 pub use scalars::*;
-pub use search::*;
+pub use searchargs::*;
 pub use table::*;
 pub use variation::*;
 
@@ -21,7 +21,7 @@ pub trait Evaluator
 
     /// Generates all valid moves on the given board.
     /// For performance reasons, this should be as lazy as possible!
-    fn generate_moves(&self, board: &Board) -> Self::Generator;
+    fn generate_moves(board: &Board) -> Self::Generator;
 
     /// Returns a new evaluator. Evaluators should be instanced so that they can support internal state.
     fn new(options: UhpOptions) -> Self;

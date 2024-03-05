@@ -1,4 +1,4 @@
-use std::{collections::HashSet, hash::Hash};
+use std::collections::HashSet;
 
 use crate::prelude::*;
 
@@ -167,11 +167,11 @@ impl Board
     pub fn generate_moves(&self) -> Vec<Move>
     {
         let mut moves: Vec<Move> = Vec::new();
-        
+
         self.generate_placements_into(&mut moves);
         self.generate_moves_into(&mut moves);
-        self.generate_throws_into(& mut moves);
-        
+        self.generate_throws_into(&mut moves);
+
         moves
     }
 
@@ -191,14 +191,14 @@ impl Board
     pub fn is_pinned(&self, piece: &Piece) -> bool
     {
         let Some(hex) = self.pieces[piece.index() as usize]
-        else 
+        else
         {
             return false;
         };
-        
+
         let stack = self.stacks[hex as usize];
         let token = self.top(hex).unwrap();
-        
+
         if token != *piece
         {
             true
@@ -207,9 +207,10 @@ impl Board
         {
             false
         }
-        else // stack.height() == 1
+        else
+        // stack.height() == 1
         {
-            self.pinned.contains(&hex)    
+            self.pinned.contains(&hex)
         }
     }
 
@@ -278,9 +279,17 @@ impl Board
     /// Returns the pieces neighbouring a particular hex.
     pub fn pieces_neighbouring(&self, hex: Hex) -> HashSet<Piece>
     {
-        hex::neighbours(hex)
-            .into_iter()
-            .filter_map(|hex| self.top(hex))
+        hex::neighbours(hex).into_iter().filter_map(|hex| self.top(hex)).collect()
+    }
+
+    /// Gets all pieces placed in the hive that are also pinned.
+    pub fn pinned_pieces(&self, player: Player) -> HashSet<Piece>
+    {
+        self.pieces
+            .iter()
+            .enumerate()
+            .flat_map(|(i, hex)| hex.map(|_| Piece::from(i as u8)))
+            .filter(|piece| piece.player == player && self.is_pinned(piece))
             .collect()
     }
 
@@ -432,7 +441,6 @@ impl Board
         {
             return Err(Error::new(Kind::InternalError, "No move to undo.".into()));
         };
-        self.history.undo();
 
         // This function only nominally does error checking. Because we are undoing a move that previously passed a
         // Board::check() in the play step, we skip error checking and use the unchecked versions of insert and remove.
@@ -468,7 +476,16 @@ impl Board
         // Flip the player.
         self.zobrist.prev();
 
+        // Now that the look-backwards steps are done, fix the history.
+        self.history.undo();
+
         Ok(self.zobrist.get())
+    }
+
+    /// Gets the key corresponding to this board.
+    pub fn zobrist(&self) -> ZobristHash
+    {
+        self.zobrist.get()
     }
 }
 

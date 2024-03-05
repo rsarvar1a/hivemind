@@ -14,6 +14,16 @@ pub enum SearchArgs
 
 impl SearchArgs
 {
+    /// Determines the hard depth limit.
+    pub fn depth(&self) -> Option<Depth>
+    {
+        match self
+        {
+            | Self::Depth(d) => Some(*d),
+            | Self::Time(_) => None,
+        }
+    }
+
     /// Tries to parse args into a set of search options.
     pub fn parse(args: &[&str]) -> Result<SearchArgs>
     {

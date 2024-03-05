@@ -126,6 +126,7 @@ impl std::fmt::Display for Stack
     }
 }
 
+#[allow(unused)]
 impl Stack
 {
     const MASK: u64 = u8::MAX as u64;

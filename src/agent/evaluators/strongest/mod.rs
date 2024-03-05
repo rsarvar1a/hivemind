@@ -3,6 +3,7 @@ use std::{sync::atomic::Ordering, thread};
 use crate::prelude::*;
 
 mod data;
+mod evaluate;
 mod search;
 
 use data::*;
@@ -21,24 +22,19 @@ impl Evaluator for StrongestEvaluator
 
     fn best_move(&mut self, board: &Board, args: SearchArgs) -> Move
     {
-        let moves = super::BasicMoveGenerator::new(board)
-            .collect::<Vec<Move>>();
+        let moves = super::BasicMoveGenerator::new(board).collect::<Vec<Move>>();
 
-        if moves.is_empty()
-        {
-            Move::Pass
-        }
-        else if moves.len() == 1
+        if moves.len() == 1
         {
             moves[0]
         }
-        else 
+        else
         {
-            self.search(board, args)   
+            self.search(board, args)
         }
     }
 
-    fn generate_moves(&self, board: &Board) -> Self::Generator
+    fn generate_moves(board: &Board) -> Self::Generator
     {
         PrioritizingMoveGenerator::new(board)
     }
@@ -93,17 +89,12 @@ impl StrongestEvaluator
         self.create_thread_data(board);
         self.setup_data(args);
 
-        let (main, rest) = self.thread_data.split_first_mut().unwrap();
-
         thread::scope(|s| {
-            s.spawn(|| {
-                Self::iterative_search::<true>(&self.global_data, main);
-                self.global_data.stopped.store(true, Ordering::SeqCst);
-            });
-            for data in rest.iter_mut()
+            let global_data = &self.global_data;
+            for (index, data) in self.thread_data.iter_mut().enumerate()
             {
-                s.spawn(|| {
-                    Self::iterative_search::<false>(&self.global_data, data);
+                s.spawn(move || {
+                    Self::iterative_search(global_data, data, index == 0);
                 });
             }
         });
@@ -127,7 +118,8 @@ impl StrongestEvaluator
 /// making position evaluation more efficient.
 pub struct PrioritizingMoveGenerator
 {
-    board: Board,
+    moves: Vec<Move>,
+    index: usize,
 }
 
 impl Iterator for PrioritizingMoveGenerator
@@ -135,7 +127,9 @@ impl Iterator for PrioritizingMoveGenerator
     type Item = Move;
     fn next(&mut self) -> Option<Self::Item>
     {
-        None
+        let next = self.moves.get(self.index);
+        self.index += 1;
+        next.copied()
     }
 }
 
@@ -143,6 +137,13 @@ impl<'a> PrioritizingMoveGenerator
 {
     pub fn new(board: &Board) -> Self
     {
-        PrioritizingMoveGenerator { board: board.clone() }
+        let mut moves = board.generate_moves();
+
+        if moves.is_empty()
+        {
+            moves.push(Move::Pass);
+        }
+
+        PrioritizingMoveGenerator { moves, index: 0 }
     }
 }

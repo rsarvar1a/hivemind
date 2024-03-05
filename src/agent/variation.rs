@@ -9,3 +9,13 @@ pub struct Variation
     pub moves: ArrayVec<Move, { scalars::MAXIMUM_PLY }>,
     pub score: i32,
 }
+
+impl Variation
+{
+    pub fn load(&mut self, mv: Move, rest: &Variation)
+    {
+        self.moves.clear();
+        self.moves.push(mv);
+        self.moves.try_extend_from_slice(&rest.moves).unwrap();
+    }
+}

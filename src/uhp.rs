@@ -23,6 +23,7 @@ pub struct Server<E>
 where
     E: Evaluator,
 {
+    #[allow(unused)]
     options:   UhpOptions,
     board:     Option<Board>,
     evaluator: E,
@@ -240,10 +241,9 @@ impl<E: Evaluator> Server<E>
     fn valid_moves(&self) -> Result<()>
     {
         let board = self.ensure_started()?;
-
-        let evaluator = evaluators::Basic::new(self.options.clone());
-        let moves = evaluator.generate_moves(board);
+        let moves = evaluators::Basic::generate_moves(board);
         let movelist = moves.map(|mv| format!("{}", Into::<MoveString>::into(mv))).collect::<Vec<_>>().join(";");
+        let movelist = if movelist == "" { "pass".into() } else { movelist };
 
         println!("{}", movelist);
         Ok(())

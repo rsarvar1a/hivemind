@@ -1,5 +1,6 @@
 #![feature(iterator_try_collect)]
 #![feature(never_type)]
+#![feature(step_trait)]
 #![feature(trait_alias)]
 
 pub(crate) mod agent;

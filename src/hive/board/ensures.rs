@@ -117,7 +117,10 @@ impl Board
         // We need to exclude stacked positions.
         if self.is_pinned(piece)
         {
-            return Err(Error::new(Kind::OneHivePrinciple, format!("Piece {} is pinned by the one hive principle.", piece)));
+            return Err(Error::new(
+                Kind::OneHivePrinciple,
+                format!("Piece {} is pinned by the one hive principle.", piece),
+            ));
         }
         Ok(())
     }

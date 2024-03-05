@@ -30,6 +30,9 @@ impl TranspositionTable
     /// The upper bound on the table's age.
     const EXTENT_AGE: u8 = 0x3F;
 
+    ///
+    pub const DEPTH_DECREMENT_THRESHOLD: Depth = Depth::new(4);
+
     /// Increments the age of the table.
     pub fn increment(&self)
     {

@@ -1,6 +1,6 @@
 use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// A ply-representation of search depth.
 pub struct Depth(i32);
 
@@ -25,10 +25,13 @@ impl Depth
     /// The resolution of a depth.
     const PER_PLY: Depth = Depth(100);
 
-    // One ply.
+    /// Zero plies.
+    pub const NIL: Depth = Depth::new(0);
+
+    /// One ply.
     pub const PLY: Depth = Depth::new(1);
 
-    // The max search depth is 128 plys, or 64 turns.
+    /// The max search depth is 128 plys, or 64 turns.
     pub const MAX: Depth = Depth::new(1 + i8::MAX as i32);
 
     /// Clamps this depth to a valid ply. If it was negative, clamps to 0.
@@ -189,5 +192,60 @@ impl Neg for Depth
     fn neg(self) -> Self::Output
     {
         Depth(-self.0)
+    }
+}
+
+impl std::iter::Step for Depth
+{
+    fn backward(start: Self, count: usize) -> Self
+    {
+        start - (count as i32)
+    }
+
+    fn backward_checked(start: Self, count: usize) -> Option<Self>
+    {
+        let d = Self::backward(start, count);
+        if d < Self::NIL
+        {
+            None
+        }
+        else
+        {
+            Some(d)
+        }
+    }
+
+    fn forward(start: Self, count: usize) -> Self
+    {
+        start + (count as i32)
+    }
+
+    fn forward_checked(start: Self, count: usize) -> Option<Self>
+    {
+        let d = Self::forward(start, count);
+        if d > Self::MAX
+        {
+            None
+        }
+        else
+        {
+            Some(d)
+        }
+    }
+
+    fn steps_between(start: &Self, end: &Self) -> Option<usize>
+    {
+        if start > end
+        {
+            return None;
+        }
+
+        let diff = *end - *start;
+
+        match diff.exact()
+        {
+            | true => Some(diff.floor() as usize),
+            | false => None,
+        }
     }
 }

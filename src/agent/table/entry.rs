@@ -1,7 +1,7 @@
 use crate::prelude::*;
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 // The age of a particular entry.
 pub struct TTAge
 {
@@ -10,10 +10,11 @@ pub struct TTAge
 }
 
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 /// A bound on the age on a TTEntry.
 pub enum TTBound
 {
+    #[default]
     None  = 0,
     Upper = 1,
     Lower = 2,
@@ -28,20 +29,20 @@ impl From<TTBound> for i32
     }
 }
 
+#[allow(unused)]
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 /// Data associated with the most recent evaluation of a particular board state.
 pub struct TTEntry
 {
     // This entry's main k-v.
-    pub key:   ZobristHash, // 16
-    pub mv:    MoveToken,   // 4
-    pub depth: Depth,       // 4
-    pub eval:  i32,         // 4
-    pub score: i32,         // 4
-    pub age:   TTAge,       // 2
-    #[allow(unused)]
-    _padding:  [i16; 3], // 6
+    pub key:      ZobristHash, // 16
+    pub mv:       MoveToken,   // 4
+    pub depth:    Depth,       // 4
+    pub eval:     i32,         // 4
+    pub score:    i32,         // 4
+    pub age:      TTAge,       // 2
+    pub _padding: [i16; 3],    // 6
 }
 
 impl From<TTEntryData> for TTEntry
