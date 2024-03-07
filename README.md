@@ -6,6 +6,11 @@ A fully-featured implementation of the game Hive, as well as:
 
 # Usage
 ```bash
+$ just run
+```
+
+or:
+```bash
 $ touch .env # Mandatory, even if empty
 $ cargo run --release
 ```
@@ -15,4 +20,5 @@ $ cargo run --release
 Just clone and hack away!
 
 `hivemind`'s `justfile` uses some non-standard utilities.
-1. `cargo pretty-test` (`cargo install cargo-pretty-test`)
+1. `cargo pretty-test`
+2. `cargo flamegraph`
