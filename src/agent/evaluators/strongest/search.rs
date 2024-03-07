@@ -13,9 +13,6 @@ impl StrongestEvaluator
 
         let mut data = search_data;
 
-        // Clear the variation here, because we reconstruct it from the best found move if there is one.
-        variation.moves.clear();
-
         // Try the transposition table, and check for a cutoff.
         let key = thread_data.board.zobrist();
         if let Some(entry) = global_data.transpositions.load(key, data.depth.floor() as usize)
@@ -46,11 +43,19 @@ impl StrongestEvaluator
             }
         }
 
+        // If we are in a terminal state, we should also return immediately. The score here will potentially be above the minimum win score.
+        let game_over = matches!(thread_data.board.state(), GameState::WhiteWins | GameState::BlackWins | GameState::Draw);
+
         // If we have a depth constraint, enforce it here by returning the heuristic's evaluation.
         // We always have the trivial heuristic of max depth.
-        if data.depth == global_data.args.depth().unwrap_or(Depth::MAX)
+        if data.depth == global_data.args.depth() || game_over
         {
+            thread_data.leaf_count += 1;
             return Self::evaluate_board(global_data, thread_data);
+        }
+        else
+        {
+            thread_data.stem_count += 1;
         }
 
         let (mut best_mv, mut best_score, mut bound) = (MoveToken::default(), -NAN, TTBound::Upper);
@@ -61,20 +66,17 @@ impl StrongestEvaluator
             depth: data.depth + 1,
         };
 
-        // Recurse on the movelist.
-        for mv in Self::generate_moves(&thread_data.board)
-        {
-            if let Err(err) = thread_data.board.play(&mv)
-            {
-                panic!("{}", err);
-            }
+        let prev = thread_data.board.clone();
 
+        // Recurse on the movelist, but only check standard position to narrow the space.
+        for mv in super::PrioritizingMoveGenerator::new(&thread_data.board, true)
+        {
+            // Saving some time here by living on the edge...
+            // If move generation breaks, we panic.
+
+            thread_data.board.play_unchecked(&mv);
             let score = -Self::alpha_beta(global_data, thread_data, next_data, &mut new_variation);
-            
-            if let Err(err) = thread_data.board.undo(1)
-            {
-                panic!("{}", err);
-            }
+            thread_data.board = prev.clone();
 
             // Failure (beta-cutoff).
             if score >= data.b
@@ -89,6 +91,7 @@ impl StrongestEvaluator
                     },
                     ..Default::default()
                 };
+
                 global_data.transpositions.store(&failed_cutoff, data.depth.floor() as usize);
                 return data.b;
             }
@@ -123,6 +126,7 @@ impl StrongestEvaluator
                 ..Default::default()
             };
             global_data.transpositions.store(&best_entry, data.depth.floor() as usize);
+            log::trace!("found {: ^7} of score {: >6} (depth {: ^4})", Option::<Move>::from(best_mv).unwrap(), best_score, data.depth);
         }
 
         best_score
@@ -199,7 +203,7 @@ impl StrongestEvaluator
         // that start closer to the real position.
         const DEPTH_VARIANCE_BY_THREAD: i32 = 8;
 
-        let search_range = Depth::new(1) + thread_data.id as i32 % DEPTH_VARIANCE_BY_THREAD..=global_data.args.depth().unwrap_or(Depth::MAX);
+        let search_range = Depth::new(1) + thread_data.id as i32 % DEPTH_VARIANCE_BY_THREAD..=global_data.args.depth();
 
         // At each depth, we try to narrow the window if possible, but if the search fails, we are forced to
         // undergo a huge (costly) search on the next iteration by setting the window size to be unbounded.
@@ -229,6 +233,12 @@ impl StrongestEvaluator
             else
             {
                 window_data.window = AspirationWindow::default();
+            }
+
+            // Update the max depth window seen.
+            if depth.floor() as u64 > global_data.max_depth.load(Ordering::SeqCst)
+            {
+                global_data.max_depth.store(depth.floor() as u64, Ordering::SeqCst);
             }
 
             // For non-main threads, this might be a good place to stop.

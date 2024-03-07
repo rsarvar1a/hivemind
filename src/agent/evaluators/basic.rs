@@ -23,7 +23,7 @@ impl Evaluator for BasicEvaluator
 
     fn generate_moves(board: &Board) -> Self::Generator
     {
-        BasicMoveGenerator::new(board)
+        BasicMoveGenerator::new(board, false)
     }
 
     fn new(_options: UhpOptions) -> Self
@@ -52,9 +52,9 @@ impl Iterator for BasicMoveGenerator
 
 impl BasicMoveGenerator
 {
-    pub fn new(board: &Board) -> Self
+    pub fn new(board: &Board, standard_position: bool) -> Self
     {
-        let mut moves = board.generate_moves();
+        let mut moves = board.generate_moves(standard_position);
 
         if moves.is_empty()
         {

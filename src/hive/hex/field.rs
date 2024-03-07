@@ -403,8 +403,6 @@ impl Perimeter
     /// Returns all hexes in the perimeter reachable using a non-backtracking path of the given length.
     pub fn exact_distance(&self, from: Hex, length: u8) -> HashSet<Hex>
     {
-        log::trace!("Length {} DFS for {}:", length, Axial::from(from));
-
         if self.0.contains(from)
         {
             let mut state = PathRecord::default();
@@ -426,8 +424,6 @@ impl Perimeter
     /// can involve a cyclic subpath.
     pub fn reachable(&self, from: Hex) -> HashSet<Hex>
     {
-        log::trace!("Reachability DFS for {}:", Axial::from(from));
-
         if self.0.contains(from)
         {
             let mut state = PathRecord::default();
@@ -445,7 +441,6 @@ impl Perimeter
     {
         if state.depth == 0
         {
-            log::trace!("Path of exact length to {}.", Axial::from(hex));
             state.reached.insert(hex);
         }
         else
@@ -472,7 +467,6 @@ impl Perimeter
     fn reachable_recurse(&self, from: Hex, state: &mut PathRecord)
     {
         state.visited.insert(from);
-        log::trace!("Visited {}", Axial::from(from));
 
         for neighbour in self.0.neighbours(from)
         {

@@ -34,10 +34,10 @@ impl Board
     }
 
     /// Generates placements for the player to move.
-    pub(super) fn generate_placements_into(&self, moves: &mut Vec<Move>)
+    pub(super) fn generate_placements_into(&self, standard_position: bool, moves: &mut Vec<Move>)
     {
         let to_move = self.to_move();
-        let deploys = self.hexes_for_placements();
+        let deploys = self.hexes_for_placements(standard_position);
         let reserve = if self.queen(to_move).is_none() && self.turn() >= 6
         {
             // The queen must be placed before the end of the fourth turn.
@@ -61,7 +61,7 @@ impl Board
 
         reserve.iter().for_each(|piece| {
             deploys.iter().for_each(|hex| {
-                moves.push(Move::Place(*piece, self.reference(*hex)));
+                moves.push(Move::Place(*piece, self.reference(piece, *hex)));
             });
         });
     }
@@ -105,7 +105,7 @@ impl Board
                 // Then construct the movement by figuring out which piece was thrown.
                 .for_each(|(from, to)| {
                     let moving = self.top(*from).unwrap();
-                    let reference = self.reference(*to);
+                    let reference = self.reference(&moving, *to);
                     moves.push(Move::Move(moving, reference.unwrap()));
                 });
         });
@@ -123,7 +123,7 @@ impl Board
     }
 
     /// Returns all the hexes in which the current player can drop a piece.
-    fn hexes_for_placements(&self) -> HashSet<Hex>
+    fn hexes_for_placements(&self, standard_position: bool) -> HashSet<Hex>
     {
         if self.turn() == 0
         {
@@ -131,7 +131,14 @@ impl Board
         }
         else if self.turn() == 1
         {
-            HashSet::from(hex::neighbours(hex::consts::ROOT))
+            if standard_position
+            {
+                HashSet::from([hex::consts::ROOT + Direction::East])
+            }
+            else 
+            {
+                HashSet::from(hex::neighbours(hex::consts::ROOT))    
+            }
         }
         else
         {
@@ -150,9 +157,14 @@ impl Board
     }
 
     /// "Unresolves" a hex, giving a reference that can be encoded into a movestring.
-    fn reference(&self, hex: Hex) -> Option<NextTo>
+    fn reference(&self, moving: &Piece, hex: Hex) -> Option<NextTo>
     {
-        let pieces = self.neighbours(hex);
+        // Not allowed to reference itself.
+        let pieces = self.neighbours(hex)
+            .into_iter()
+            .filter(|piece| *piece != *moving)
+            .collect::<HashSet<_>>();
+
         if pieces.is_empty()
         {
             None
@@ -176,12 +188,14 @@ impl Board
             .iter()
             // Drop impossible destinations.
             .filter(|to| !self.occupied(**to))
+            // Drop destinations that are isolated.
+            .filter(|to| self.reachable(piece, **to))
             // Drop movements that don't end at ground level.
             .filter(|to| self.ensure_ground_movement(from, **to).is_ok())
             // Drop movements that violate freedom to move and constant contact.
             .filter(|to| self.ensure_crawl(from, **to, false).is_ok())
             .for_each(|to| {
-                let reference = self.reference(*to).unwrap();
+                let reference = self.reference(piece, *to).unwrap();
                 moves.push(Move::Move(*piece, reference));
             });
     }
@@ -213,13 +227,15 @@ impl Board
     fn generate_ant(&self, piece: &Piece, moves: &mut Vec<Move>)
     {
         let from = self.pieces[piece.index() as usize].unwrap();
-        let reachable = self.perimeter(Some(from)).reachable(from);
+        let reachable = self.field.find_crawls(from, None);
 
-        reachable.iter().for_each(|to| {
-            let reference = self.reference(*to).unwrap();
+        reachable.iter()
+            .filter(|to| **to != from)
+            .for_each(|to| {
+            let reference = self.reference(piece, *to).unwrap();
             moves.push(Move::Move(*piece, reference));
         });
-    }
+    } 
 
     /// Generates beetle moves for the given piece.
     fn generate_beetle(&self, piece: &Piece, moves: &mut Vec<Move>)
@@ -227,10 +243,12 @@ impl Board
         let from = self.pieces[piece.index() as usize].unwrap();
         hex::neighbours(from)
             .iter()
+            // Ensure destinations are neighboured.
+            .filter(|to| self.reachable(piece, **to))
             // Drop movements that violate freedom to move and constant contact.
             .filter(|to| self.ensure_crawl(from, **to, false).is_ok())
             .for_each(|to| {
-                let reference = self.reference(*to).unwrap();
+                let reference = self.reference(piece, *to).unwrap();
                 moves.push(Move::Move(*piece, reference));
             });
     }
@@ -241,12 +259,20 @@ impl Board
         let from = self.pieces[piece.index() as usize].unwrap();
         Direction::all().iter().for_each(|direction| {
             let mut to = from + *direction;
+            
+            // If there's no neighbour, don't start the jump.
+            if ! self.occupied(to)
+            {
+                return;
+            }
+
             // Keep jumping in the same direction until we land in an empty hex.
-            while !self.occupied(to)
+            while self.occupied(to)
             {
                 to = to + *direction;
             }
-            let reference = self.reference(to).unwrap();
+
+            let reference = self.reference(piece, to).unwrap();
             moves.push(Move::Move(*piece, reference));
         });
     }
@@ -279,7 +305,7 @@ impl Board
             .collect::<HashSet<Hex>>();
 
         to.iter().for_each(|to| {
-            let reference = self.reference(*to).unwrap();
+            let reference = self.reference(piece, *to).unwrap();
             moves.push(Move::Move(*piece, reference));
         });
     }
@@ -323,10 +349,12 @@ impl Board
     fn generate_spider(&self, piece: &Piece, moves: &mut Vec<Move>)
     {
         let from = self.pieces[piece.index() as usize].unwrap();
-        let reachable = self.perimeter(Some(from)).exact_distance(from, 3);
+        let reachable = self.field.find_crawls(from, Some(3));
 
-        reachable.iter().for_each(|to| {
-            let reference = self.reference(*to).unwrap();
+        reachable.iter()
+            .filter(|to| **to != from)
+            .for_each(|to| {
+            let reference = self.reference(piece, *to).unwrap();
             moves.push(Move::Move(*piece, reference));
         });
     }

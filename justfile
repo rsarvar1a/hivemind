@@ -16,6 +16,10 @@ gdb:
     cargo build \
     && gdb --ex=run --args env -i RUST_BACKTRACE=1 target/debug/hivemind
 
+perf:
+    cargo flamegraph --dev
+    mkdir -p perf && mv flamegraph.svg perf/dev.svg && mv perf.data perf/dev.data
+
 run:
     just build \
     && touch .env \

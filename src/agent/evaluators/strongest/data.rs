@@ -79,6 +79,8 @@ pub struct ThreadData
     pub variations: Vec<Variation>,
     pub depth:      Depth,
     pub finished:   Depth,
+    pub leaf_count: u64,
+    pub stem_count: u64,
 }
 
 impl ThreadData
@@ -99,6 +101,8 @@ impl ThreadData
             variations: vec![Variation::default(); MAXIMUM_PLY],
             depth:      Depth::new(0),
             finished:   Depth::new(0),
+            leaf_count: 0,
+            stem_count: 0
         }
     }
 
@@ -115,6 +119,8 @@ impl ThreadData
         self.depth = Depth::new(0);
         self.finished = Depth::new(0);
         self.variations.fill(Variation::default());
+        self.leaf_count = 0;
+        self.stem_count = 0;
     }
 
     /// Steps back to the previous variation.

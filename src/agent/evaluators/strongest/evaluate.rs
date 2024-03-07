@@ -1,46 +1,268 @@
+use std::collections::HashSet;
+
 use super::*;
 
-const MATERIAL_ADVANTAGE: f64 = 1.5;
-const K_MATERIAL: i32 = 1000;
+const ATTACKING_KILLSPOT: f64 = 1.2;
+const MINIMUM_OPEN_KILLSPOTS: usize = 2;
+
+const K_TOTAL: f64 = 50.0;
+
+const K_DEFENSE: f64 = 40.0;
+const K_MOVEABLE: f64 = 2.0;
+const K_QUEEN_NEIGHBOURHOOD: f64 = 30.0;
+const K_QUEENS: f64 = 1.0;
+const K_RESERVE: f64 = 1.0;
+const K_STACKING: f64 = 2.0;
+
+const VALUE_ANT: f64 = 7.0;
+const VALUE_BEETLE: f64 = 6.0;
+const VALUE_GRASSHOPPER: f64 = 3.0;
+const VALUE_LADYBUG: f64 = 6.0;
+const VALUE_MOSQUITO: f64 = 8.0;
+const VALUE_PILLBUG: f64 = 6.0;
+const VALUE_QUEEN: f64 = 12.0;
+const VALUE_SPIDER: f64 = 2.0;
 
 impl StrongestEvaluator
 {
-    /// Returns a score for the board in white's perspective using some heuristics.
+    /// Gives a baseline value for a piece. The queen value is HIGH, because it refers to moveable queens.
+    ///
+    /// Moveable queens are strong because they can totally neutralize an opponent's tempo by escaping an attack.
+    fn bug_value(bug: Bug) -> f64
+    {
+        match bug
+        {
+            | Bug::Ant => VALUE_ANT,
+            | Bug::Beetle => VALUE_BEETLE,
+            | Bug::Grasshopper => VALUE_GRASSHOPPER,
+            | Bug::Ladybug => VALUE_LADYBUG,
+            | Bug::Mosquito => VALUE_MOSQUITO,
+            | Bug::Pillbug => VALUE_PILLBUG,
+            | Bug::Queen => VALUE_QUEEN,
+            | Bug::Spider => VALUE_SPIDER,
+        }
+    }
+
+    /// Returns a score for the board in the moving player's perspective using some heuristics.
     pub(super) fn evaluate_board(_global_data: &GlobalData, thread_data: &mut ThreadData) -> i32
     {
+        let is_white = if thread_data.board.to_move() == Player::White { 1 } else { -1 };
+        let is_black = -is_white;
+
         match thread_data.board.state()
         {
             | GameState::NotStarted | GameState::Draw => 0,
-            | GameState::WhiteWins => MINIMUM_WIN,
-            | GameState::BlackWins => -MINIMUM_WIN,
+            | GameState::WhiteWins => MINIMUM_WIN * is_white,
+            | GameState::BlackWins => MINIMUM_WIN * is_black,
             | _ =>
             {
-                let material = Self::evaluate_material(thread_data);
-                let to_move = if thread_data.board.to_move() == Player::White { 1 } else { -1 };
-
-                let score = to_move + K_MATERIAL * material;
-
-                score.clamp(-MINIMUM_WIN + 1, MINIMUM_WIN - 1)
+                let board_ref = &thread_data.board;
+                let score = Self::material(board_ref) + Self::queens(board_ref) + Self::reserve(board_ref);
+                let integer_score = (K_TOTAL * score).floor() as i32;
+                integer_score.clamp(-MINIMUM_WIN + 1, MINIMUM_WIN - 1)
             }
         }
     }
 
-    fn evaluate_material(thread_data: &mut ThreadData) -> i32
+    /// Returns the material advantage in the moving player's perspective, which is roughly the difference in board strength.
+    fn material(board: &Board) -> f64
     {
-        // The number of pieces in the game per player.
-        let total_per_player = thread_data.board.pouch().extents().iter().sum::<u8>() as i32;
+        let mut score = 0.0;
+        let occupied: HashSet<Hex> = board.field().clone().into();
 
-        // Pinned bugs cannot immediately participate in the attack.
-        let white_pinned = thread_data.board.pinned_pieces(Player::White).len() as i32;
-        let black_pinned = thread_data.board.pinned_pieces(Player::Black).len() as i32;
+        for hex in occupied
+        {
+            let piece = board.top(hex).unwrap();
 
-        // The asset score of each player is the number of bugs available to participate in the attack.
-        let white_material = total_per_player - white_pinned;
-        let black_material = total_per_player - black_pinned;
+            // Discard pinned bugs.
+            if board.is_pinned(&piece)
+            {
+                continue;
+            }
 
-        // We assume the position to be white-favoured by some amount proportional to its attacking strength.
-        // If there is a significant advantage, boost it.
-        let diff = white_material - black_material;
-        diff.signum() * (diff.abs() as f64).powf(MATERIAL_ADVANTAGE).floor() as i32
+            let mut piece_score = Self::bug_value(piece.kind);
+            let stacking = board.stacked(&piece);
+
+            // Special check to rescore a mosquito as its best possible neighbour.
+            'mosquito_rescore: {
+                if piece.kind == Bug::Mosquito
+                {
+                    if stacking
+                    {
+                        piece_score = Self::bug_value(Bug::Beetle);
+                        break 'mosquito_rescore;
+                    }
+                    for neighbour in board.pieces_neighbouring(hex)
+                    {
+                        if neighbour.kind == Bug::Queen
+                        {
+                            continue;
+                        }
+                        piece_score = piece_score.max(Self::bug_value(neighbour.kind));
+                    }
+                }
+            }
+
+            // Heavily reweight a bug that is on a stack, because it is pinning something underneath!
+            if stacking
+            {
+                piece_score *= K_STACKING;
+            }
+
+            // Bugs attacking their enemy queen should attack in worst-value-first order, to save high-value pieces for overall pressure in the Hive.
+            if let Some(enemy_queen_loc) = board.queen(piece.player.flip())
+            {
+                if board.field().neighbours(hex).iter().any(|adj| *adj == enemy_queen_loc)
+                {
+                    piece_score = VALUE_QUEEN - piece_score;
+                }
+            }
+
+            // Invert it if it does not belong to the current player.
+            if piece.player != board.to_move()
+            {
+                piece_score *= -1.0;
+            }
+
+            score += piece_score;
+        }
+
+        K_MOVEABLE * score
+    }
+
+    /// Returns a metric calculating the relative safety of the queens. This includes pillbug defense, if possible!
+    fn queens(board: &Board) -> f64
+    {
+        fn queen_score_for(board: &Board, player: Player) -> f64
+        {
+            let mut score = 0.0;
+
+            // Check for the safety of the friendly queen.
+            if let Some(queen_hex) = board.queen(player)
+            {
+                let queen = Piece {
+                    player,
+                    kind: Bug::Queen,
+                    num: 1,
+                };
+
+                for neighbour in board.neighbours(queen_hex)
+                {
+                    // If this bug is friendly, we can assume the best about its future moves.
+                    // For instance, it vacates killspots, or performs good warps.
+                    if neighbour.player == player
+                    {
+                        // Check if the queen's killspots are filled.
+                        // If we can vacate a killspot, it is not that severe.
+                        score -= if board.is_pinned(&neighbour)
+                        {
+                            K_QUEEN_NEIGHBOURHOOD
+                        }
+                        else
+                        {
+                            K_QUEEN_NEIGHBOURHOOD / 2.0
+                        };
+
+                        // Check if a friendly pillbug or mosquito can warp the queen to safety.
+                        if board.can_throw_another(&neighbour) && !board.is_pinned(&queen)
+                        {
+                            let mut escapes: Vec<usize> = Vec::new();
+
+                            let from = queen_hex;
+                            let intermediate = board.location(&neighbour).unwrap();
+                            for to in hex::neighbours(intermediate)
+                            {
+                                let open_killspots = 6 - board.field().neighbours(to).len();
+                                if !board.occupied(to) && board.check_throw_via(from, neighbour, to).is_ok()
+                                {
+                                    escapes.push(open_killspots);
+                                }
+                            }
+
+                            // If we have a suitable defense, reward even further.
+                            let best = escapes.into_iter().max().unwrap_or(0);
+                            if best > MINIMUM_OPEN_KILLSPOTS
+                            {
+                                score += K_DEFENSE;
+                            }
+                        }
+                    }
+                    // Otherwise, we can assume the bugs will not vacate killspots except for in exceptional tempo cases.
+                    else
+                    {
+                        // There is a heavy penalty to having a killspot filled.
+                        score -= K_QUEEN_NEIGHBOURHOOD * ATTACKING_KILLSPOT;
+
+                        // Check how much damage an opponent pillbug could do to the queen's position.
+                        if board.can_throw_another(&neighbour) && !board.is_pinned(&queen)
+                        {
+                            let mut escapes: Vec<usize> = Vec::new();
+
+                            let from = queen_hex;
+                            let intermediate = board.location(&neighbour).unwrap();
+                            for to in hex::neighbours(intermediate)
+                            {
+                                let open_killspots = 6 - board.field().neighbours(to).len();
+                                if !board.occupied(to) && board.check_throw_via(from, neighbour, to).is_ok()
+                                {
+                                    escapes.push(open_killspots);
+                                }
+                            }
+
+                            let best = escapes.into_iter().min().unwrap_or(6);
+                            if best < MINIMUM_OPEN_KILLSPOTS + 1
+                            {
+                                score -= K_QUEEN_NEIGHBOURHOOD;
+                            }
+                        }
+                    }
+                }
+
+                // Finally, if the pillbug itself is not placed, and we could direct-drop it next to the queen, add a contingency reward.
+                let pillbug = Piece {
+                    player,
+                    kind: Bug::Pillbug,
+                    num: 1,
+                };
+
+                if board.location(&pillbug).is_none()
+                {
+                    for neighbour in hex::neighbours(queen_hex)
+                    {
+                        // If we found an empty neighbour with no unfriendly neighbours, we succeeded.
+                        if !board.occupied(neighbour) && !board.neighbours(neighbour).iter().any(|piece| piece.player != player)
+                        {
+                            score += K_DEFENSE / 2.0;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            score
+        }
+
+        let to_move = board.to_move();
+        let score = queen_score_for(board, to_move) - queen_score_for(board, to_move.flip());
+        K_QUEENS * score
+    }
+
+    /// Returns the in-hand advantage in the moving player's perspective.
+    fn reserve(board: &Board) -> f64
+    {
+        fn reserve_for(board: &Board, player: Player) -> f64
+        {
+            let mut score = 0.0;
+            for bug in Bug::all().iter()
+            {
+                let remaining = board.pouch().peek(player, *bug).unwrap_or(0);
+                score += StrongestEvaluator::bug_value(*bug) + remaining as f64;
+            }
+            score
+        }
+
+        let to_move = board.to_move();
+        let score = reserve_for(board, to_move) - reserve_for(board, to_move.flip());
+        K_RESERVE * score
     }
 }

@@ -164,13 +164,34 @@ impl Board
     }
 
     /// Generates all valid moves in the position, not including Pass.
-    pub fn generate_moves(&self) -> Vec<Move>
+    pub fn generate_moves(&self, standard_position: bool) -> Vec<Move>
     {
         let mut moves: Vec<Move> = Vec::new();
 
-        self.generate_placements_into(&mut moves);
+        self.generate_placements_into(standard_position, &mut moves);
         self.generate_moves_into(&mut moves);
         self.generate_throws_into(&mut moves);
+
+        let mut capture = None;
+        for mv in &moves
+        {
+            let check = self.check(&mv);
+            if let Err(err) = check 
+            {
+                let err_here = err.chain(Error::new(Kind::InvalidMove, format!("Move {} is invalid.", mv)));
+                capture = match capture 
+                {
+                    Some(c) => Some(err_here.chain(c)),
+                    None => Some(err_here)
+                };
+            }
+        }
+        if let Some(err) = capture 
+        {
+            let with_gamestring = Error::new(Kind::LogicError, format!("Generated invalid moves in position {}.", GameString::from(self)));
+            let base = Error::holy_shit(err.chain(with_gamestring));
+            panic!("{}", base);
+        }
 
         moves
     }
@@ -212,6 +233,12 @@ impl Board
         {
             self.pinned.contains(&hex)
         }
+    }
+
+    /// Returns the hex that this piece is on, if any.
+    pub fn location(&self, piece: &Piece) -> Option<Hex>
+    {
+        self.pieces[piece.index() as usize]
     }
 
     /// Returns the pieces neighbouring a given hex.
@@ -293,6 +320,17 @@ impl Board
             .collect()
     }
 
+    /// Gets all pieces pinned.
+    pub fn pinned_pieces_all(&self) -> HashSet<Piece>
+    {
+        self.pieces
+            .iter()
+            .enumerate()
+            .flat_map(|(i, hex)| hex.map(|_| Piece::from(i as u8)))
+            .filter(|piece| self.is_pinned(piece))
+            .collect()
+    }
+
     /// Determines whether or not the given bug is already in the Hive.
     pub fn placed(&self, piece: &Piece) -> bool
     {
@@ -305,7 +343,7 @@ impl Board
     pub fn play(&mut self, mv: &Move) -> Result<ZobristHash>
     {
         self.check(mv)?;
-        self.play_unchecked(mv)
+        Ok(self.play_unchecked(mv))
     }
 
     /// Gets the pouch for this game.
@@ -338,7 +376,7 @@ impl Board
             );
             return Err(Error::holy_shit(err.chain(base)));
         };
-        self.play_unchecked(&entry.mv)
+        Ok(self.play_unchecked(&entry.mv))
     }
 
     /// Deteremines whether or not this bug is stacked.
@@ -576,6 +614,7 @@ impl Board
         Ok(())
     }
 
+    #[allow(unused)]
     /// Ensures a piece can be removed.
     fn can_remove(&self, piece: &Piece) -> Result<()>
     {
@@ -589,7 +628,7 @@ impl Board
     }
 
     /// Determines whether or not the given bug can act as a Pillbug this turn.
-    fn can_throw_another(&self, piece: &Piece) -> bool
+    pub(crate) fn can_throw_another(&self, piece: &Piece) -> bool
     {
         if !self.placed(piece)
             || self
@@ -621,6 +660,7 @@ impl Board
         Error::new(Kind::LogicError, format!("This is not a valid {} move.", kind.long()))
     }
 
+    #[allow(unused)]
     /// Inserts a piece into the Hive, updating the hash.
     ///
     /// A piece can only be inserted into the hive if:
@@ -695,7 +735,7 @@ impl Board
     }
 
     /// Plays the move onto the board. Assumes Board::check().
-    fn play_unchecked(&mut self, mv: &Move) -> Result<ZobristHash>
+    pub(crate) fn play_unchecked(&mut self, mv: &Move) -> ZobristHash
     {
         let entry = Entry {
             mv:    *mv,
@@ -708,7 +748,7 @@ impl Board
             {
                 // Put the piece in the Hive by taking it out of the bag.
                 let hex = self.resolve(nextto);
-                self.insert(piece, hex)?;
+                self.insert_unchecked(piece, hex);
 
                 // It was the last piece moved/played, so it is immune to the Pillbug next turn.
                 self.set_immune(Some(hex));
@@ -716,11 +756,11 @@ impl Board
             | Move::Move(piece, nextto) =>
             {
                 // Remove the piece from where it currently is.
-                self.remove(piece)?;
+                self.remove_unchecked(piece);
 
                 // Insert it into its new location.
                 let hex = self.resolve(&Some(*nextto));
-                self.insert(piece, hex)?;
+                self.insert_unchecked(piece, hex);
 
                 // It is now immune to the Pillbug on the next turn.
                 self.set_immune(Some(hex));
@@ -745,9 +785,19 @@ impl Board
         // Flip the player to move.
         self.zobrist.next();
 
-        Ok(self.zobrist.get())
+        self.zobrist.get()
     }
 
+    /// Determines if the target hex is isolated when removing the given piece.
+    fn reachable(&self, piece: &Piece, to: Hex) -> bool
+    {
+        self.neighbours(to)
+            .into_iter()
+            .filter(|adj| *adj != *piece)
+            .count() > 0
+    }
+
+    #[allow(unused)]
     /// Removes a piece from the Hive, putting the piece back into the bag and updating the hash.
     fn remove(&mut self, piece: &Piece) -> Result<()>
     {
@@ -784,7 +834,7 @@ impl Board
             | Some(nextto) =>
             {
                 let NextTo { piece, direction } = nextto;
-                let dest = self.pieces[piece.index() as usize].unwrap();
+                let dest = self.pieces[piece.index() as usize].expect(format!("Reference piece {} not in hive?", piece).as_str());
                 match direction
                 {
                     | Some(d) => dest + *d,

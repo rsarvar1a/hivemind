@@ -20,6 +20,14 @@ impl From<Depth> for i32
     }
 }
 
+impl std::fmt::Display for Depth
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result 
+    {
+        write!(f, "{}{}.{}", if self.0.signum() == -1 { "-" } else { "" }, self.0 / Self::PER_PLY.0, self.0 % Self::PER_PLY.0)    
+    }
+}
+
 impl Depth
 {
     /// The resolution of a depth.

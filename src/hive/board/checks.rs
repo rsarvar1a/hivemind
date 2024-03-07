@@ -63,7 +63,7 @@ impl Board
     }
 
     /// Whether or not the movement can be interpreted as a throw if the given piece is doing the throwing.
-    pub(super) fn check_throw_via(&self, from: Hex, via: Piece, to: Hex) -> Result<()>
+    pub fn check_throw_via(&self, from: Hex, via: Piece, to: Hex) -> Result<()>
     {
         let base = Error::new(Kind::InvalidMove, format!("Piece {} cannot execute this throw.", via));
         let intermediate = self.pieces[via.index() as usize].unwrap();
