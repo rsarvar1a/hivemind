@@ -58,8 +58,12 @@ impl StrongestEvaluator
             thread_data.stem_count += 1;
         }
 
-        let (mut best_mv, mut best_score, mut bound) = (MoveToken::default(), -NAN, TTBound::Upper);
+        let pre_alpha = data.a;
+
+        let mut best_score = -NAN;
+        let mut best_mv = MoveToken::default();
         let mut new_variation = Variation::default();
+
         let next_data = AlphaBetaSearchData {
             a:     -data.b,
             b:     -data.a,
@@ -100,18 +104,36 @@ impl StrongestEvaluator
             if score >= best_score
             {
                 best_score = score;
-                best_mv = mv.into();
-
-                // Then take the variation from the recursive step and load it into the outvariation.
-                variation.load(mv, &new_variation);
 
                 if score >= data.a
                 {
+                    // Then take the variation from the recursive step and load it into the outvariation.
+                    best_mv = mv.into();
+                    variation.load(mv, &new_variation);
                     data.a = score;
-                    bound = TTBound::Exact;
+                }
+
+                // Cutoff.
+                if data.a >= data.b
+                {
+                    break;
                 }
             }
         }
+
+        // Determine which kind of score we found at this branch.
+        let bound = if best_score >= data.b
+        {
+            TTBound::Lower
+        }
+        else if best_score > pre_alpha
+        {
+            TTBound::Exact
+        }
+        else 
+        {
+            TTBound::Upper
+        };
 
         // Don't store nulls (Move::Pass) in the table.
         if best_mv.is_some()
@@ -126,7 +148,12 @@ impl StrongestEvaluator
                 ..Default::default()
             };
             global_data.transpositions.store(&best_entry, data.depth.floor() as usize);
-            log::trace!("found {: ^7} of score {: >6} (depth {: ^4})", Option::<Move>::from(best_mv).unwrap(), best_score, data.depth);
+            log::trace!(
+                "found {: ^7} of score {: >6} (depth {: ^4})",
+                Option::<Move>::from(best_mv).unwrap(),
+                best_score,
+                data.depth
+            );
         }
 
         best_score

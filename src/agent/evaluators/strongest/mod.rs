@@ -29,9 +29,16 @@ impl Evaluator for StrongestEvaluator
             self.sane_opening(board)
         }
         else 
-        {    
-            let moves = super::BasicMoveGenerator::new(board, true).collect::<Vec<Move>>();
+        {
+            // We can skip the search entirely with this check.
+            // Otherwise, even in DTM-1 positions, it struggles.
+            if let Some(mate) = self.mate_in_one(board)
+            {
+                return mate;
+            }
 
+            let moves = super::BasicMoveGenerator::new(board, true).collect::<Vec<Move>>();
+            
             if moves.len() == 1
             {
                 moves[0]
@@ -90,6 +97,27 @@ impl StrongestEvaluator
             template.id = thread_id;
             self.thread_data.push(template.clone());
         }
+    }
+
+    /// Perhaps there's a mate in one here, in which case we should skip discovery.
+    fn mate_in_one(&self, board: &Board) -> Option<Move>
+    {
+        let mut board = board.clone();
+        let undo = board.clone();
+        let to_move = board.to_move();
+        let expect = if to_move == Player::White { GameState::WhiteWins } else { GameState::BlackWins };
+
+        let moves = super::BasicMoveGenerator::new(&board, true).collect::<Vec<Move>>();
+        for mv in moves
+        {
+            board.play_unchecked(&mv);
+            if board.state() == expect
+            {
+                return Some(mv);
+            }
+            board = undo.clone();
+        }
+        None
     }
 
     /// Returns a sane opening, which is effectively just any opening that does not start with an Ant or Spider.
