@@ -1,9 +1,9 @@
 use std::{sync::atomic::Ordering, thread};
 
-use crate::prelude::*;
-
 use itertools::Itertools;
-use rand::{thread_rng, seq::SliceRandom};
+use rand::{seq::SliceRandom, thread_rng};
+
+use crate::prelude::*;
 
 mod data;
 mod evaluate;
@@ -29,10 +29,10 @@ impl Evaluator for StrongestEvaluator
         {
             self.sane_opening(board)
         }
-        else 
+        else
         {
             let moves = super::BasicMoveGenerator::new(board, true).collect::<Vec<Move>>();
-            
+
             if moves.len() == 1
             {
                 moves[0]
@@ -92,7 +92,7 @@ impl StrongestEvaluator
 
         if turn < 4
         {
-            if (2..=3).contains(& turn)
+            if (2..=3).contains(&turn)
             {
                 // We'll consider early queens and mosquitos as well, since queens could come in early on pillbug games,
                 // and mosquitos could potentially function well in pillbug or ladybug openers..
@@ -102,7 +102,7 @@ impl StrongestEvaluator
             for mv in moves
             {
                 let Move::Place(piece, _) = mv
-                else 
+                else
                 {
                     continue;
                 };
@@ -124,14 +124,13 @@ impl StrongestEvaluator
         self.setup_data(args);
 
         thread::scope(|s| {
-            
             let global_data = &self.global_data;
 
             // Our worker threads.
             for mut thread_data in &mut self.thread_data
             {
                 s.spawn(move || {
-                    Self::iterative_search(global_data, & mut thread_data);
+                    Self::iterative_search(global_data, &mut thread_data);
                 });
             }
 
@@ -146,11 +145,13 @@ impl StrongestEvaluator
         });
 
         let mut board = board.clone();
+        let mut movegen = super::PrioritizingMoveGenerator::new(&board, false);
+
         let best_thread = self.best_thread();
         let variation = best_thread.variation.clone();
 
         let entry = self.global_data.transpositions.load(board.zobrist()).unwrap();
-        let mv = Option::<Move>::from(entry.mv).unwrap_or(variation.moves[0].mv);
+        let mv = Option::<Move>::from(entry.mv).unwrap_or(variation.moves.get(0).map(|sm| sm.mv).unwrap_or(movegen.next().unwrap_or(Move::Pass)));
 
         let p = board.to_move();
         board.play(&mv).expect("illegal move");
@@ -172,7 +173,8 @@ impl StrongestEvaluator
         let pv = variation.moves.iter().map(|mv| format!("{}", mv.mv)).join(";");
         let pv = if pv.as_str() == "" { "none" } else { pv.as_str() };
 
-        log::info!(r"
+        log::info!(
+            r"
 
  ════════════════════════════════ found move '{ms: ^8}' ═══════════════════════════════
 ╒═════════╤═════════╤══════════╤═════════╤═══════════╤══════════╤═══════════╤══════════╕
@@ -185,7 +187,8 @@ player to move: {p}
 principal variation: {pv}
 variation move? {is_variation}
 
-");
+"
+        );
 
         mv
     }

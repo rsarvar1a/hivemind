@@ -39,11 +39,11 @@ impl Board
         moves
     }
 
-    /// Only generates tactical moves for quiescence search. 
+    /// Only generates tactical moves for quiescence search.
     pub fn generate_tactical_moves(&self) -> Vec<Move>
     {
         // Don't waste time here in the opening.
-        if self.turn() < 8 
+        if self.turn() < 8
         {
             return Vec::new();
         }
@@ -90,7 +90,7 @@ impl Board
             }
         }
 
-        // If we didn't just make a quiet move, but the opposing player did, generate 
+        // If we didn't just make a quiet move, but the opposing player did, generate
         // a full subtree to allow the opposing player the opportunity to find extensions.
         'defense: {
             if let Move::Place(..) = past[past.len() - 1].mv
@@ -149,7 +149,11 @@ impl Board
             // Get the pieces from the indices.
             .map(|(i, on_board)| (Piece::from(i as u8), on_board))
             // Drop the pieces that are pinned, and ensure they're not stunned.
-            .filter_map(|(piece, on_board)| on_board.map(|loc| (!self.is_pinned(&piece) && self.stunned != Some(loc)).then_some(piece)).unwrap_or(None))
+            .filter_map(|(piece, on_board)| {
+                on_board
+                    .map(|loc| (!self.is_pinned(&piece) && self.stunned != Some(loc)).then_some(piece))
+                    .unwrap_or(None)
+            })
             // Only move pieces owned by the current player.
             .filter(|piece| piece.player == to_move)
             // Take uniques.
@@ -262,9 +266,9 @@ impl Board
             {
                 HashSet::from([hex::consts::ROOT + Direction::East])
             }
-            else 
+            else
             {
-                HashSet::from(hex::neighbours(hex::consts::ROOT))    
+                HashSet::from(hex::neighbours(hex::consts::ROOT))
             }
         }
         else
@@ -289,14 +293,17 @@ impl Board
         // Check for climbing.
         if let Some(stack) = self.top(hex)
         {
-            return Some(NextTo { piece: stack, direction: None });
+            return Some(NextTo {
+                piece:     stack,
+                direction: None,
+            });
         }
 
         // Return the best directional marker in some sort of clockwise order.
         for dir in Direction::all()
         {
             let loc = hex - dir;
-            if ! self.occupied(loc)
+            if !self.occupied(loc)
             {
                 continue;
             }
@@ -365,13 +372,11 @@ impl Board
         let from = self.pieces[piece.index() as usize].unwrap();
         let reachable = self.field.find_crawls(from, None);
 
-        reachable.iter()
-            .filter(|to| **to != from)
-            .for_each(|to| {
+        reachable.iter().filter(|to| **to != from).for_each(|to| {
             let reference = self.reference(piece, *to).unwrap();
             moves.push(Move::Move(*piece, reference));
         });
-    } 
+    }
 
     /// Generates beetle moves for the given piece.
     fn generate_beetle(&self, piece: &Piece, moves: &mut Vec<Move>)
@@ -395,9 +400,9 @@ impl Board
         let from = self.pieces[piece.index() as usize].unwrap();
         Direction::all().iter().for_each(|direction| {
             let mut to = from + *direction;
-            
+
             // If there's no neighbour, don't start the jump.
-            if ! self.occupied(to)
+            if !self.occupied(to)
             {
                 return;
             }
@@ -487,9 +492,7 @@ impl Board
         let from = self.pieces[piece.index() as usize].unwrap();
         let reachable = self.field.find_crawls(from, Some(3));
 
-        reachable.iter()
-            .filter(|to| **to != from)
-            .for_each(|to| {
+        reachable.iter().filter(|to| **to != from).for_each(|to| {
             let reference = self.reference(piece, *to).unwrap();
             moves.push(Move::Move(*piece, reference));
         });

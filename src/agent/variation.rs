@@ -24,22 +24,22 @@ impl Variation
 /// A move paired with an evaluation.
 pub struct ScoredMove
 {
-    pub mv: Move,
-    pub score: i32
+    pub mv:    Move,
+    pub score: i32,
 }
 
 impl PartialOrd for ScoredMove
 {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> 
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering>
     {
-        self.score.partial_cmp(&other.score)    
+        self.score.partial_cmp(&other.score)
     }
 }
 
-impl Ord for ScoredMove 
+impl Ord for ScoredMove
 {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering 
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering
     {
-        self.score.cmp(&other.score)    
+        self.score.cmp(&other.score)
     }
 }

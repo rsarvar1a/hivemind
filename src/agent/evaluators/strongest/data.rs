@@ -72,7 +72,7 @@ pub struct ThreadData
     pub leaf_count: u64,
     pub stem_count: u64,
     pub best_move:  Option<Move>,
-    pub cache:      Cache<(ZobristHash, Move), Board>
+    pub cache:      Cache<(ZobristHash, Move), Board>,
 }
 
 impl ThreadData
@@ -92,7 +92,7 @@ impl ThreadData
             leaf_count: 0,
             stem_count: 0,
             best_move:  None,
-            cache:      Cache::new(cap.floor() as u64)
+            cache:      Cache::new(cap.floor() as u64),
         }
     }
 

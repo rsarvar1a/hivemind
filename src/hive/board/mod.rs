@@ -720,7 +720,7 @@ impl Board
     {
         // Short circuit: placements and passes cannot be pillbug actions.
         let Move::Move(piece, _) = mv
-        else 
+        else
         {
             return false;
         };

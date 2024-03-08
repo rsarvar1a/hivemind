@@ -99,9 +99,9 @@ impl StrongestEvaluator
                 if (data.a + 1..=data.b - 1).contains(&attempt)
                 {
                     let next = ABData {
-                        a: -data.b,
-                        b: -attempt,
-                        depth: data.depth - Depth::PLY
+                        a:     -data.b,
+                        b:     -attempt,
+                        depth: data.depth - Depth::PLY,
                     };
 
                     -Self::alpha_beta(global_data, thread_data, next, Some(*mv))?
@@ -124,7 +124,7 @@ impl StrongestEvaluator
 
             thread_data.board = board.clone();
 
-            if v > best_score 
+            if v > best_score
             {
                 best_score = v;
                 best_mv = *mv;
@@ -150,11 +150,11 @@ impl StrongestEvaluator
         assert!(best_mv != Move::Pass);
 
         let entry = TTEntry {
-            key: thread_data.board.zobrist(),
-            mv: best_mv.into(),
+            key:   thread_data.board.zobrist(),
+            mv:    best_mv.into(),
             depth: data.depth.clone(),
             score: best_score,
-            age: TTAge::compute(best_score, pre_alpha, data.b)
+            age:   TTAge::compute(best_score, pre_alpha, data.b),
         };
 
         global_data.transpositions.store(&entry);
@@ -186,7 +186,7 @@ impl StrongestEvaluator
     fn bugzwang(global_data: &GlobalData, thread_data: &mut ThreadData, search_data: ABData) -> Option<i32>
     {
         const DEPTH_REDUCTION: Depth = Depth::new(2);
-        
+
         let data = search_data;
         let board = thread_data.board.clone();
         let movegen = super::PrioritizingMoveGenerator::new(&board, false).collect::<Vec<_>>();
@@ -196,9 +196,9 @@ impl StrongestEvaluator
             if data.depth > DEPTH_REDUCTION && Self::evaluate_board(&board) >= data.b
             {
                 let next_data = ABData {
-                    a: -data.b,
-                    b: -data.b + 1,
-                    depth: data.depth - DEPTH_REDUCTION
+                    a:     -data.b,
+                    b:     -data.b + 1,
+                    depth: data.depth - DEPTH_REDUCTION,
                 };
 
                 thread_data.play(&Move::Pass);
@@ -253,15 +253,13 @@ impl StrongestEvaluator
 
             // Check the root result. If it's a win score, we just abort early.
             let hit = global_data.transpositions.load(board.zobrist()).unwrap();
-            
+
             // Remember this result.
             thread_data.target = hit.score;
             thread_data.best_move = hit.mv.into();
 
             // Load the principal variation scores from the table.
-            global_data
-                .transpositions
-                .get_principal_variation(&board, &mut thread_data.variation);
+            global_data.transpositions.get_principal_variation(&board, &mut thread_data.variation);
 
             if scores::reconstruct(hit.score).abs() == MINIMUM_WIN
             {
@@ -284,7 +282,7 @@ impl StrongestEvaluator
         {
             return Some(Self::evaluate_board(&thread_data.board));
         }
-        
+
         let board = thread_data.board.clone();
         let moves = board.generate_tactical_moves();
         let mut best_score = MINIMUM_LOSS;
@@ -297,9 +295,9 @@ impl StrongestEvaluator
         for mv in moves.iter()
         {
             let next_data = ABData {
-                a: -data.b,
-                b: -data.a,
-                depth: data.depth - Depth::PLY
+                a:     -data.b,
+                b:     -data.a,
+                depth: data.depth - Depth::PLY,
             };
 
             thread_data.play(mv);
@@ -309,7 +307,7 @@ impl StrongestEvaluator
             best_score = best_score.max(v);
             data.a = data.a.max(v);
 
-            if data.a >= data.b 
+            if data.a >= data.b
             {
                 break;
             }

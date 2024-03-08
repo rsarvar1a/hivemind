@@ -13,7 +13,7 @@ impl TTAge
 {
     pub fn compute(score: i32, alpha: i32, beta: i32) -> TTAge
     {
-        let bound = if score <= alpha 
+        let bound = if score <= alpha
         {
             TTBound::Upper
         }
@@ -26,10 +26,7 @@ impl TTAge
             TTBound::Exact
         };
 
-        TTAge {
-            age: 0,
-            bound
-        }
+        TTAge { age: 0, bound }
     }
 }
 
@@ -60,11 +57,11 @@ impl From<TTBound> for i32
 pub struct TTEntry
 {
     // This entry's main k-v.
-    pub key:      ZobristHash, // 16
-    pub mv:       MoveToken,   // 4
-    pub depth:    Depth,       // 4
-    pub score:    i32,         // 4
-    pub age:      TTAge,       // 2
+    pub key:   ZobristHash, // 16
+    pub mv:    MoveToken,   // 4
+    pub depth: Depth,       // 4
+    pub score: i32,         // 4
+    pub age:   TTAge,       // 2
 }
 
 impl From<TTEntryData> for TTEntry
@@ -103,5 +100,5 @@ pub struct TTHit
     pub mv:    MoveToken,
     pub depth: Depth,
     pub score: i32,
-    pub bound: TTBound
+    pub bound: TTBound,
 }

@@ -154,8 +154,7 @@ impl StrongestEvaluator
                         // If the bug is a crawler, then it's blocked if we gave it Ant powers
                         // and it still couldn't vacate the hex it's on.
                         let from = board.location(&neighbour).unwrap();
-                        let is_blocked = crawlers.contains(&neighbour.kind)
-                            && board.is_blocked_crawler(from);
+                        let is_blocked = crawlers.contains(&neighbour.kind) && board.is_blocked_crawler(from);
 
                         // Check if the queen's killspots are filled.
                         // If we can vacate a killspot, it is not that severe.

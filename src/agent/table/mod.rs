@@ -44,19 +44,19 @@ impl TranspositionTable
             {
                 match hit.bound
                 {
-                    TTBound::Exact =>
+                    | TTBound::Exact =>
                     {
                         return Some(hit.score);
-                    },
-                    TTBound::Lower => 
+                    }
+                    | TTBound::Lower =>
                     {
                         *a = (*a).max(hit.score);
-                    },
-                    TTBound::Upper =>
+                    }
+                    | TTBound::Upper =>
                     {
                         *b = (*b).min(hit.score);
-                    },
-                    _ => unreachable!()
+                    }
+                    | _ => unreachable!(),
                 };
 
                 if *a >= *b

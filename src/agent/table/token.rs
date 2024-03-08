@@ -46,7 +46,7 @@ impl From<Move> for MoveToken
 
                 MoveToken(set | p__ | po_ | np_ | nd_ | ndo | no_ | et_)
             }
-            | Move::Pass => 
+            | Move::Pass =>
             {
                 let set = 1u32 << Self::OFFSET_MOVE_OPT;
                 let et_ = Self::TYPE_PASS << Self::OFFSET_ENUM_TYPE;
