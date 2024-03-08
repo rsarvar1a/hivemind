@@ -6,9 +6,13 @@ use crate::prelude::*;
 #[command(version, about, long_about = None)]
 pub struct UhpOptions
 {
-    #[arg(short, long, default_value_t = 1.0)]
-    /// maximum memory in GB
-    pub memory: f64,
+    #[arg(long, default_value_t = 1.0)]
+    /// maximum memory in GB for LFU
+    pub cache_memory: f64,
+
+    #[arg(long, default_value_t = 1.0)]
+    /// maximum memory in GB for transpositions
+    pub table_memory: f64,
 
     #[arg(short, long, default_value = "info")]
     /// lowest log level to show

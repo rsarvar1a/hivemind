@@ -5,8 +5,6 @@ use super::*;
 const ATTACKING_KILLSPOT: f64 = 1.2;
 const MINIMUM_OPEN_KILLSPOTS: usize = 2;
 
-const K_TOTAL: f64 = 50.0;
-
 const K_DEFENSE: f64 = 40.0;
 const K_MOVEABLE: f64 = 2.0;
 const K_QUEEN_NEIGHBOURHOOD: f64 = 30.0;
@@ -44,21 +42,20 @@ impl StrongestEvaluator
     }
 
     /// Returns a score for the board in the moving player's perspective using some heuristics.
-    pub(super) fn evaluate_board(_global_data: &GlobalData, thread_data: &mut ThreadData) -> i32
+    pub(super) fn evaluate_board(board: &Board) -> i32
     {
-        let is_white = if thread_data.board.to_move() == Player::White { 1 } else { -1 };
+        let is_white = if board.to_move() == Player::White { 1 } else { -1 };
         let is_black = -is_white;
 
-        match thread_data.board.state()
+        match board.state()
         {
             | GameState::NotStarted | GameState::Draw => 0,
             | GameState::WhiteWins => MINIMUM_WIN * is_white,
             | GameState::BlackWins => MINIMUM_WIN * is_black,
             | _ =>
             {
-                let board_ref = &thread_data.board;
-                let score = Self::material(board_ref) + Self::queens(board_ref) + Self::reserve(board_ref);
-                let integer_score = (K_TOTAL * score).floor() as i32;
+                let score = Self::material(board) + Self::queens(board) + Self::reserve(board);
+                let integer_score = score.floor() as i32;
                 integer_score.clamp(-MINIMUM_WIN + 1, MINIMUM_WIN - 1)
             }
         }
@@ -98,6 +95,7 @@ impl StrongestEvaluator
                         {
                             continue;
                         }
+
                         piece_score = piece_score.max(Self::bug_value(neighbour.kind));
                     }
                 }
@@ -114,7 +112,7 @@ impl StrongestEvaluator
             {
                 if board.field().neighbours(hex).iter().any(|adj| *adj == enemy_queen_loc)
                 {
-                    piece_score = VALUE_QUEEN - piece_score;
+                    piece_score = 0.0;
                 }
             }
 
@@ -136,6 +134,7 @@ impl StrongestEvaluator
         fn queen_score_for(board: &Board, player: Player) -> f64
         {
             let mut score = 0.0;
+            let crawlers = vec![Bug::Ant, Bug::Mosquito, Bug::Pillbug, Bug::Queen, Bug::Spider];
 
             // Check for the safety of the friendly queen.
             if let Some(queen_hex) = board.queen(player)
@@ -152,9 +151,15 @@ impl StrongestEvaluator
                     // For instance, it vacates killspots, or performs good warps.
                     if neighbour.player == player
                     {
+                        // If the bug is a crawler, then it's blocked if we gave it Ant powers
+                        // and it still couldn't vacate the hex it's on.
+                        let from = board.location(&neighbour).unwrap();
+                        let is_blocked = crawlers.contains(&neighbour.kind)
+                            && board.is_blocked_crawler(from);
+
                         // Check if the queen's killspots are filled.
                         // If we can vacate a killspot, it is not that severe.
-                        score -= if board.is_pinned(&neighbour)
+                        score -= if is_blocked || board.is_pinned(&neighbour)
                         {
                             K_QUEEN_NEIGHBOURHOOD
                         }
@@ -210,7 +215,7 @@ impl StrongestEvaluator
                             }
 
                             let best = escapes.into_iter().min().unwrap_or(6);
-                            if best < MINIMUM_OPEN_KILLSPOTS + 1
+                            if best <= MINIMUM_OPEN_KILLSPOTS
                             {
                                 score -= K_QUEEN_NEIGHBOURHOOD;
                             }

@@ -22,8 +22,9 @@ impl std::fmt::Display for Patch
 /// A movement-patch pair for easy backward restoration.
 pub struct Entry
 {
-    pub mv:    Move,
-    pub patch: Option<Patch>,
+    pub mv:           Move,
+    pub patch:        Option<Patch>,
+    pub prev_stunned: Option<Hex>,
 }
 
 impl std::fmt::Debug for Entry

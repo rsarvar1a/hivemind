@@ -3,6 +3,8 @@ use std::{
     time::Instant,
 };
 
+use mini_moka::sync::Cache;
+
 use crate::prelude::*;
 
 #[derive(Debug)]
@@ -11,6 +13,7 @@ pub struct GlobalData
 {
     pub args:           SearchArgs,
     pub max_depth:      AtomicU64,
+    pub options:        UhpOptions,
     pub start_time:     Instant,
     pub stopped:        AtomicBool,
     pub transpositions: TranspositionTable,
@@ -21,25 +24,16 @@ impl GlobalData
     /// Creates a new GlobalData with the given options.
     pub fn new(options: &UhpOptions) -> GlobalData
     {
-        let bytes = (options.memory * 1e+9) as usize;
-        let table = TranspositionTable::new(bytes);
+        let table_bytes = (options.table_memory * 1e+9) as usize;
+        let table = TranspositionTable::new(table_bytes);
 
         GlobalData {
             args:           SearchArgs::Depth(Depth::new(0)),
             max_depth:      AtomicU64::new(0),
+            options:        options.clone(),
             start_time:     Instant::now(),
             stopped:        AtomicBool::new(false),
             transpositions: table,
-        }
-    }
-
-    /// Determines time control (if the search args are set to time).
-    pub fn out_of_time(&self) -> bool
-    {
-        match self.args
-        {
-            | SearchArgs::Depth(_) => false,
-            | SearchArgs::Time(duration) => self.start_time.elapsed() > duration,
         }
     }
 
@@ -57,15 +51,13 @@ impl GlobalData
     /// Determines if the search should end. If so, it sets the stopped flag as well.
     pub fn should_stop(&self) -> bool
     {
-        if self.stopped.load(Ordering::SeqCst) || self.out_of_time()
-        {
-            self.stopped.store(true, Ordering::SeqCst);
-            true
-        }
-        else
-        {
-            false
-        }
+        self.stopped.load(Ordering::SeqCst)
+    }
+
+    /// Signals that the engine is out of time.
+    pub fn signal(&self)
+    {
+        self.stopped.store(true, Ordering::SeqCst);
     }
 }
 
@@ -75,63 +67,57 @@ pub struct ThreadData
 {
     pub id:         usize,
     pub board:      Board,
-    pub evals:      Vec<i32>,
-    pub variations: Vec<Variation>,
-    pub depth:      Depth,
-    pub finished:   Depth,
+    pub variation:  Variation,
+    pub target:     i32,
     pub leaf_count: u64,
     pub stem_count: u64,
+    pub best_move:  Option<Move>,
+    pub cache:      Cache<(ZobristHash, Move), Board>
 }
 
 impl ThreadData
 {
-    /// Gets the highest depth completed by this thread.
-    pub fn depth(&self) -> usize
-    {
-        self.finished.floor() as usize
-    }
-
     /// Creates a new thread data instance.
-    pub fn new(board: &Board) -> ThreadData
+    pub fn new(options: UhpOptions, board: &Board) -> ThreadData
     {
+        let entry_size = std::mem::size_of::<Board>();
+        let threads: usize = std::thread::available_parallelism().map(|nzu| nzu.into()).unwrap_or(0);
+        let cap = options.cache_memory * 1e+9 / (threads as f64) / (entry_size as f64);
+
         ThreadData {
             id:         0,
             board:      board.clone(),
-            evals:      vec![0; MAXIMUM_PLY],
-            variations: vec![Variation::default(); MAXIMUM_PLY],
-            depth:      Depth::new(0),
-            finished:   Depth::new(0),
+            variation:  Variation::default(),
+            target:     0,
             leaf_count: 0,
-            stem_count: 0
+            stem_count: 0,
+            best_move:  None,
+            cache:      Cache::new(cap.floor() as u64)
         }
     }
 
-    pub fn next(&mut self, variation: &Variation)
+    /// Plays a move but leverages the cache.
+    pub fn play(&mut self, mv: &Move)
     {
-        self.finished = self.depth;
-        let index = self.depth();
-        self.variations[index] = variation.clone();
+        let key = (self.board.zobrist(), *mv);
+        if let Some(board) = self.cache.get(&key)
+        {
+            self.board = board.clone();
+        }
+        else
+        {
+            self.board.play_unchecked(mv);
+            self.cache.insert(key, self.board.clone());
+        }
     }
 
     /// Sets up the thread data for the upcoming search.
     pub fn prepare(&mut self)
     {
-        self.depth = Depth::new(0);
-        self.finished = Depth::new(0);
-        self.variations.fill(Variation::default());
+        self.variation = Variation::default();
+        self.target = 0;
         self.leaf_count = 0;
         self.stem_count = 0;
-    }
-
-    /// Steps back to the previous variation.
-    pub fn prev(&mut self)
-    {
-        self.finished = self.depth - 1;
-    }
-
-    /// Gets the principal variation, which is the best variation found at the highest completed depth.
-    pub fn principal_variation(&self) -> &Variation
-    {
-        &self.variations[self.depth()]
+        self.best_move = None;
     }
 }

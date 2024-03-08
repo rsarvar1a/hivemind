@@ -22,6 +22,7 @@ impl From<Move> for MoveToken
         {
             | Move::Move(piece, nextto) =>
             {
+                let set = 1u32 << Self::OFFSET_MOVE_OPT;
                 let p__ = (piece.index() as u32) << Self::OFFSET_PIECE;
                 let po_ = 1u32 << Self::OFFSET_PIECE_OPT;
                 let np_ = (nextto.piece.index() as u32) << Self::OFFSET_NEXTTO_PIECE;
@@ -30,10 +31,11 @@ impl From<Move> for MoveToken
                 let no_ = 1u32 << Self::OFFSET_NEXTTO_OPT;
                 let et_ = Self::TYPE_MOVE << Self::OFFSET_ENUM_TYPE;
 
-                MoveToken(p__ | po_ | np_ | nd_ | ndo | no_ | et_)
+                MoveToken(set | p__ | po_ | np_ | nd_ | ndo | no_ | et_)
             }
             | Move::Place(piece, nextto) =>
             {
+                let set = 1u32 << Self::OFFSET_MOVE_OPT;
                 let p__ = (piece.index() as u32) << Self::OFFSET_PIECE;
                 let po_ = 1u32 << Self::OFFSET_PIECE_OPT;
                 let np_ = (nextto.map(|n| n.piece.index()).unwrap_or(0) as u32) << Self::OFFSET_NEXTTO_PIECE;
@@ -42,9 +44,15 @@ impl From<Move> for MoveToken
                 let no_ = (nextto.is_some() as u32) << Self::OFFSET_NEXTTO_OPT;
                 let et_ = Self::TYPE_PLACE << Self::OFFSET_ENUM_TYPE;
 
-                MoveToken(p__ | po_ | np_ | nd_ | ndo | no_ | et_)
+                MoveToken(set | p__ | po_ | np_ | nd_ | ndo | no_ | et_)
             }
-            | Move::Pass => MoveToken(Self::TYPE_PASS),
+            | Move::Pass => 
+            {
+                let set = 1u32 << Self::OFFSET_MOVE_OPT;
+                let et_ = Self::TYPE_PASS << Self::OFFSET_ENUM_TYPE;
+
+                MoveToken(set | et_)
+            }
         }
     }
 }

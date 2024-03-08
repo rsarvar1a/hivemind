@@ -163,36 +163,12 @@ impl Board
         &self.field
     }
 
-    /// Generates all valid moves in the position, not including Pass.
-    pub fn generate_moves(&self, standard_position: bool) -> Vec<Move>
+    /// Generates non-pillbug or non-mosquito-as-pillbug moves.
+    pub fn generate_non_throws(&self, standard_position: bool) -> Vec<Move>
     {
         let mut moves: Vec<Move> = Vec::new();
-
         self.generate_placements_into(standard_position, &mut moves);
         self.generate_moves_into(&mut moves);
-        self.generate_throws_into(&mut moves);
-
-        let mut capture = None;
-        for mv in &moves
-        {
-            let check = self.check(&mv);
-            if let Err(err) = check 
-            {
-                let err_here = err.chain(Error::new(Kind::InvalidMove, format!("Move {} is invalid.", mv)));
-                capture = match capture 
-                {
-                    Some(c) => Some(err_here.chain(c)),
-                    None => Some(err_here)
-                };
-            }
-        }
-        if let Some(err) = capture 
-        {
-            let with_gamestring = Error::new(Kind::LogicError, format!("Generated invalid moves in position {}.", GameString::from(self)));
-            let base = Error::holy_shit(err.chain(with_gamestring));
-            panic!("{}", base);
-        }
-
         moves
     }
 
@@ -206,6 +182,47 @@ impl Board
     pub fn immune(&self) -> Option<Hex>
     {
         self.immune
+    }
+
+    /// Check if a ground-level hex is blocked at ground level.
+    pub fn is_blocked_crawler(&self, hex: Hex) -> bool
+    {
+        if self.stacks[hex as usize].height() != 1
+        {
+            return false;
+        }
+
+        if self.pinned.contains(&hex)
+        {
+            return true;
+        }
+
+        let neighbours = hex::neighbours(hex);
+        let mut open = HashSet::new();
+
+        for neighbour in neighbours
+        {
+            if !self.occupied(neighbour)
+            {
+                open.insert(neighbour);
+            }
+        }
+
+        if open.len() <= 2
+        {
+            return false;
+        }
+
+        for pair in itertools::iproduct!(open.iter(), open.iter())
+        {
+            // If two neighbouring spots are open, the bug is definitely not blocked.
+            if hex::common_neighbours(*pair.0, *pair.1).is_some()
+            {
+                return true;
+            }
+        }
+
+        false
     }
 
     /// Determines if the given hex is pinned.
@@ -329,6 +346,12 @@ impl Board
             .flat_map(|(i, hex)| hex.map(|_| Piece::from(i as u8)))
             .filter(|piece| self.is_pinned(piece))
             .collect()
+    }
+
+    // Gets all pinned hexes.
+    pub fn pinned_hexes(&self) -> HashSet<Hex>
+    {
+        self.pinned.clone()
     }
 
     /// Determines whether or not the given bug is already in the Hive.
@@ -692,23 +715,25 @@ impl Board
         self.zobrist.hash(piece, hex, height);
     }
 
-    /// A pillbug move is a move where a bug is moved and its player is not the same as the moving player.
-    ///
-    /// The UHP notation is a bit ambiguous, since it does not specify when a move is natural or caused by a pillbug.
-    ///
-    /// However, if a player moves their own bug with the pillbug, then next turn:
-    ///
-    /// 1. it should be immune; and
-    /// 2. it should be stunned.
-    ///
-    /// On a given player's turn, we can target an opponent's bug if:
-    /// 1. it is not immune.
-    ///
-    /// As a consequence, we can freely declare same-player Pillbug moves to not be stunned, because it does not
-    /// need to be checked on the opposing player's turn.
-    fn is_pillbug_move(&self, piece: &Piece, player: Player) -> bool
+    /// Gives a better answer to the pillbug question by generating everything that the piece can do on its own.
+    fn is_pillbug_move(&self, mv: &Move) -> bool
     {
-        piece.player != player
+        // Short circuit: placements and passes cannot be pillbug actions.
+        let Move::Move(piece, _) = mv
+        else 
+        {
+            return false;
+        };
+
+        // Short-circuit: a piece of the opponent's colour can only possibly move due to a throw.
+        if piece.player != self.to_move()
+        {
+            return true;
+        }
+
+        let mut moves = Vec::new();
+        self.generate_moves_for(&piece, &mut moves);
+        !moves.contains(&mv)
     }
 
     /// Translate a move into a patch, so we can supplement the history.
@@ -738,8 +763,9 @@ impl Board
     pub(crate) fn play_unchecked(&mut self, mv: &Move) -> ZobristHash
     {
         let entry = Entry {
-            mv:    *mv,
-            patch: self.patch_from(mv),
+            mv:           *mv,
+            patch:        self.patch_from(mv),
+            prev_stunned: self.stunned,
         };
 
         match mv
@@ -752,6 +778,7 @@ impl Board
 
                 // It was the last piece moved/played, so it is immune to the Pillbug next turn.
                 self.set_immune(Some(hex));
+                self.set_stun(None);
             }
             | Move::Move(piece, nextto) =>
             {
@@ -766,13 +793,15 @@ impl Board
                 self.set_immune(Some(hex));
 
                 // Apply a stun if this was a pillbug move.
-                let hex = if self.is_pillbug_move(piece, self.to_move()) { Some(hex) } else { None };
+                let this_mv = Move::Move(*piece, *nextto);
+                let hex = if self.is_pillbug_move(&this_mv) { Some(hex) } else { None };
                 self.set_stun(hex);
             }
             | Move::Pass =>
             {
                 // No piece is immune.
                 self.set_immune(None);
+                self.set_stun(None);
             }
         };
 
@@ -791,10 +820,7 @@ impl Board
     /// Determines if the target hex is isolated when removing the given piece.
     fn reachable(&self, piece: &Piece, to: Hex) -> bool
     {
-        self.neighbours(to)
-            .into_iter()
-            .filter(|adj| *adj != *piece)
-            .count() > 0
+        self.neighbours(to).into_iter().filter(|adj| *adj != *piece).count() > 0
     }
 
     #[allow(unused)]
@@ -891,19 +917,7 @@ impl Board
         };
 
         // Update the stunned hex.
-
-        let Move::Move(piece, _) = entry.mv
-        else
-        {
-            self.set_immune(None);
-            return Ok(());
-        };
-
-        if self.is_pillbug_move(&piece, self.to_move().flip())
-        {
-            let hex = entry.patch.map(|patch| patch.to);
-            self.set_immune(hex);
-        }
+        self.set_stun(entry.prev_stunned);
 
         Ok(())
     }

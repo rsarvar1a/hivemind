@@ -30,8 +30,74 @@ impl TranspositionTable
     /// The upper bound on the table's age.
     const EXTENT_AGE: u8 = 0x3F;
 
-    ///
+    /// TT-reduction weight.
     pub const DEPTH_DECREMENT_THRESHOLD: Depth = Depth::new(4);
+
+    /// Checks if the score here is any good.
+    pub fn check(&self, key: ZobristHash, depth: Depth, candidate: &mut Option<Move>, a: &mut i32, b: &mut i32) -> Option<i32>
+    {
+        if let Some(hit) = self.load(key)
+        {
+            *candidate = hit.mv.into();
+
+            if hit.depth >= depth
+            {
+                match hit.bound
+                {
+                    TTBound::Exact =>
+                    {
+                        return Some(hit.score);
+                    },
+                    TTBound::Lower => 
+                    {
+                        *a = (*a).max(hit.score);
+                    },
+                    TTBound::Upper =>
+                    {
+                        *b = (*b).min(hit.score);
+                    },
+                    _ => unreachable!()
+                };
+
+                if *a >= *b
+                {
+                    return Some(hit.score);
+                }
+            }
+        }
+        None
+    }
+
+    /// Loads a variation from the table.
+    pub fn get_principal_variation(&self, board: &Board, variation: &mut Variation)
+    {
+        variation.moves.clear();
+        variation.score = 0;
+
+        let mut history = Vec::new();
+        let mut board = board.clone();
+        let mut zobrist = board.zobrist();
+
+        while let Some(hit) = self.load(zobrist)
+        {
+            let mv: Move = Option::<Move>::from(hit.mv).unwrap_or(Move::Pass);
+            variation.moves.push(ScoredMove { mv, score: hit.score });
+
+            board.play_unchecked(&mv);
+            zobrist = board.zobrist();
+
+            if history.contains(&zobrist)
+            {
+                break;
+            }
+            history.push(zobrist);
+        }
+
+        if !variation.moves.is_empty()
+        {
+            variation.score = variation.moves[0].score;
+        }
+    }
 
     /// Increments the age of the table.
     pub fn increment(&self)
@@ -41,7 +107,7 @@ impl TranspositionTable
     }
 
     /// Finds the hitinfo associated with this board state, if one exists.
-    pub fn load(&self, key: ZobristHash, ply: usize) -> Option<TTHit>
+    pub fn load(&self, key: ZobristHash) -> Option<TTHit>
     {
         self.get(&key).map(|e| {
             let entry: TTEntry = e.to_owned().into();
@@ -51,8 +117,7 @@ impl TranspositionTable
                 mv:    entry.mv,
                 depth: entry.depth,
                 bound: entry.age.bound,
-                value: scores::reconstruct(entry.score, ply),
-                eval:  entry.eval,
+                score: entry.score,
             }
         })
     }
@@ -62,7 +127,7 @@ impl TranspositionTable
     {
         // Get the number of entries that fit in our table.
         let cap = bytes / TTEntry::SIZE;
-        log::debug!("Allocated a TranspositionTable with {} entries. ({} bytes)", cap, bytes);
+        log::trace!("Allocated a TranspositionTable with {} entries. ({} bytes)", cap, bytes);
 
         TranspositionTable {
             map: Arc::new(DashMap::with_capacity(cap)),
@@ -72,7 +137,7 @@ impl TranspositionTable
     }
 
     /// Stores a new evaluation into the transposition table.
-    pub fn store(&self, entry: &TTEntry, ply: usize)
+    pub fn store(&self, entry: &TTEntry)
     {
         let mut entry = *entry;
         let existing: Option<TTEntry> = self.get(&entry.key).map(|e| e.to_owned().into());
@@ -82,7 +147,6 @@ impl TranspositionTable
             | Some(prev) =>
             {
                 entry.mv = if entry.mv.is_some() { entry.mv } else { prev.mv };
-                entry.score = scores::normalize(entry.score, ply);
 
                 if entry.key != prev.key
                     || entry.age.bound == TTBound::Exact && prev.age.bound != TTBound::Exact
@@ -127,16 +191,7 @@ impl TranspositionTable
     /// Whether or not to overwrite an entry based on age priority.
     fn should_overwrite(&self, prev: &TTEntry, next: &TTEntry) -> bool
     {
-        let insert_bonus: i32 = next.age.bound.into();
-        let record_bonus: i32 = prev.age.bound.into();
-
-        let aged: i32 = self.age.load(Ordering::Relaxed) as i32;
-        let diff: i32 = (aged + 64 - prev.age.age as i32) & Self::EXTENT_AGE as i32;
-
-        let insert_prio: Depth = next.depth + insert_bonus + (diff * diff) / 4;
-        let record_prio: Depth = prev.depth + record_bonus;
-
-        insert_prio * 3 >= record_prio * 2
+        prev.age.age != self.age.load(Ordering::SeqCst) || prev.depth <= next.depth
     }
 }
 

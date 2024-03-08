@@ -71,7 +71,7 @@ impl std::fmt::Display for MoveString
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 /// Represents a movement in the game of Hive.
 pub enum Move
 {
@@ -170,7 +170,7 @@ impl Move
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 /// Represents a relative location (relative to another piece).
 pub struct NextTo
 {

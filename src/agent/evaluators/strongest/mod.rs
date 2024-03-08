@@ -2,6 +2,7 @@ use std::{sync::atomic::Ordering, thread};
 
 use crate::prelude::*;
 
+use itertools::Itertools;
 use rand::{thread_rng, seq::SliceRandom};
 
 mod data;
@@ -30,13 +31,6 @@ impl Evaluator for StrongestEvaluator
         }
         else 
         {
-            // We can skip the search entirely with this check.
-            // Otherwise, even in DTM-1 positions, it struggles.
-            if let Some(mate) = self.mate_in_one(board)
-            {
-                return mate;
-            }
-
             let moves = super::BasicMoveGenerator::new(board, true).collect::<Vec<Move>>();
             
             if moves.len() == 1
@@ -68,28 +62,17 @@ impl Evaluator for StrongestEvaluator
 
 impl StrongestEvaluator
 {
-    /// Gets the thread with the best search performance.
+    /// Gets the best thread by the score of its variation.
     fn best_thread(&self) -> &ThreadData
     {
-        let (mut best, rest) = self.thread_data.split_first().unwrap();
-        for this in rest
-        {
-            let (best_depth, best_score) = (best.depth(), best.principal_variation().score);
-            let (this_depth, this_score) = (this.depth(), this.principal_variation().score);
-            if ((this_depth == best_depth || this_score > scores::MINIMUM_WIN) && this_score > best_score)
-                || (this_depth > best_depth && (this_score > best_score || best_score < scores::MINIMUM_WIN))
-            {
-                best = this;
-            }
-        }
-        best
+        self.thread_data.iter().max_by_key(|t| t.variation.score).unwrap()
     }
 
     /// Creates the thread data on this evaluator.
     fn create_thread_data<'a>(&mut self, board: &Board)
     {
         let num_threads = std::thread::available_parallelism().map(|nzu| nzu.into()).unwrap_or(1);
-        let mut template = ThreadData::new(board);
+        let mut template = ThreadData::new(self.global_data.options.clone(), board);
         self.thread_data.clear();
 
         for thread_id in 0..num_threads
@@ -97,27 +80,6 @@ impl StrongestEvaluator
             template.id = thread_id;
             self.thread_data.push(template.clone());
         }
-    }
-
-    /// Perhaps there's a mate in one here, in which case we should skip discovery.
-    fn mate_in_one(&self, board: &Board) -> Option<Move>
-    {
-        let mut board = board.clone();
-        let undo = board.clone();
-        let to_move = board.to_move();
-        let expect = if to_move == Player::White { GameState::WhiteWins } else { GameState::BlackWins };
-
-        let moves = super::BasicMoveGenerator::new(&board, true).collect::<Vec<Move>>();
-        for mv in moves
-        {
-            board.play_unchecked(&mv);
-            if board.state() == expect
-            {
-                return Some(mv);
-            }
-            board = undo.clone();
-        }
-        None
     }
 
     /// Returns a sane opening, which is effectively just any opening that does not start with an Ant or Spider.
@@ -162,29 +124,68 @@ impl StrongestEvaluator
         self.setup_data(args);
 
         thread::scope(|s| {
+            
             let global_data = &self.global_data;
-            for (index, data) in self.thread_data.iter_mut().enumerate()
+
+            // Our worker threads.
+            for mut thread_data in &mut self.thread_data
             {
                 s.spawn(move || {
-                    Self::iterative_search(global_data, data, index == 0);
+                    Self::iterative_search(global_data, & mut thread_data);
+                });
+            }
+
+            // Our timer thread.
+            if let SearchArgs::Time(duration) = global_data.args
+            {
+                s.spawn(move || {
+                    std::thread::sleep(duration);
+                    global_data.signal();
                 });
             }
         });
 
-        let leaf_count = self.thread_data.iter().map(|t| t.leaf_count).sum::<u64>();
-        let stem_count = self.thread_data.iter().map(|t| t.stem_count).sum::<u64>();
-        let time_elapsed = self.global_data.start_time.elapsed();
-
+        let mut board = board.clone();
         let best_thread = self.best_thread();
-        let mut movegen = super::BasicMoveGenerator::new(board, true);
-        let principal_variation = best_thread.principal_variation();
-        let mv = principal_variation.moves.first().copied().unwrap_or(movegen.next().unwrap());
-        let best_score = principal_variation.score;
+        let variation = best_thread.variation.clone();
 
-        log::debug!("found {: ^8}: scored {: >6}", mv, best_score);
-        log::debug!("took {: >3.1}s and reached depth {}", time_elapsed.as_secs_f64(), self.global_data.max_depth.load(Ordering::SeqCst));
-        log::debug!("visited {:09}  stems ({: >6} N/s)", stem_count, (stem_count as f64 / time_elapsed.as_secs_f64()).floor() as u32);
-        log::debug!("visited {:09} leaves ({: >6} N/s)", leaf_count, (leaf_count as f64 / time_elapsed.as_secs_f64()).floor() as u32);
+        let entry = self.global_data.transpositions.load(board.zobrist()).unwrap();
+        let mv = Option::<Move>::from(entry.mv).unwrap_or(variation.moves[0].mv);
+
+        let p = board.to_move();
+        board.play(&mv).expect("illegal move");
+
+        let e = -Self::evaluate_board(&board);
+        let s = variation.score;
+
+        let lct = self.thread_data.iter().map(|t| t.leaf_count).sum::<u64>();
+        let sct = self.thread_data.iter().map(|t| t.stem_count).sum::<u64>();
+        let elapsed = self.global_data.start_time.elapsed();
+        let el = elapsed.as_secs_f64().round();
+        let d = self.global_data.max_depth.load(Ordering::SeqCst);
+        let lr = (lct as f64 / el).round() as i32;
+        let sr = (sct as f64 / el).round() as i32;
+        let el = el as i32;
+
+        let ms = format!("{}", mv);
+        let is_variation = best_thread.best_move.is_none();
+        let pv = variation.moves.iter().map(|mv| format!("{}", mv.mv)).join(";");
+        let pv = if pv.as_str() == "" { "none" } else { pv.as_str() };
+
+        log::info!(r"
+
+ ════════════════════════════════ found move '{ms: ^8}' ═══════════════════════════════
+╒═════════╤═════════╤══════════╤═════════╤═══════════╤══════════╤═══════════╤══════════╕
+|  score  |   eval  | time (s) |  depth  |   stems   |    /s    |   leaves  |    /s    |
+╞═════════╪═════════╪══════════╪═════════╪═══════════╪══════════╪═══════════╪══════════╡
+| {s: >7} | {e: >7} | {el: >8} | {d: >7} | {sct: >9} | {sr: >8} | {lct: >9} | {lr: >8} |
+╘═════════╧═════════╧══════════╧═════════╧═══════════╧══════════╧═══════════╧══════════╛
+
+player to move: {p}
+principal variation: {pv}
+variation move? {is_variation}
+
+");
 
         mv
     }

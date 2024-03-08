@@ -20,7 +20,7 @@ impl SearchArgs
         match self
         {
             | Self::Depth(d) => *d,
-            | Self::Time(t) => Depth::new(t.as_secs_f64().powf(1.2).log2().floor().max(5.0) as i32),
+            | Self::Time(_) => Depth::MAX,
         }
     }
 

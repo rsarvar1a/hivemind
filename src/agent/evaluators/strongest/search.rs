@@ -3,408 +3,381 @@ use super::*;
 impl StrongestEvaluator
 {
     // Performs alpha-beta search.
-    fn alpha_beta(global_data: &GlobalData, thread_data: &mut ThreadData, search_data: AlphaBetaSearchData, variation: &mut Variation) -> i32
+    fn alpha_beta(global_data: &GlobalData, thread_data: &mut ThreadData, search_data: ABData, prev: Option<Move>) -> Option<i32>
     {
         // Check time early.
         if global_data.should_stop()
         {
-            return 0;
+            return None;
         }
 
         let mut data = search_data;
+        thread_data.leaf_count += 1;
 
-        // Try the transposition table, and check for a cutoff.
-        let key = thread_data.board.zobrist();
-        if let Some(entry) = global_data.transpositions.load(key, data.depth.floor() as usize)
+        // If we are in a terminal state, we should also return immediately.
+        if matches!(thread_data.board.state(), GameState::WhiteWins | GameState::BlackWins | GameState::Draw)
         {
-            // Only consider better depths; otherwise, we'd rather recompute this position.
-            if entry.depth >= data.depth
-            {
-                match entry.bound
-                {
-                    | TTBound::Exact => return entry.value,
-                    | TTBound::Lower =>
-                    {
-                        data.a = data.a.max(entry.value);
-                    }
-                    | TTBound::Upper =>
-                    {
-                        data.b = data.b.min(entry.value);
-                    }
-                    | _ =>
-                    {}
-                };
-
-                // Is there a cutoff?
-                if data.a >= data.b
-                {
-                    return entry.value;
-                }
-            }
+            return Some(Self::evaluate_board(&thread_data.board));
         }
 
-        // If we are in a terminal state, we should also return immediately. The score here will potentially be above the minimum win score.
-        let game_over = matches!(thread_data.board.state(), GameState::WhiteWins | GameState::BlackWins | GameState::Draw);
+        // If we have a depth constraint, find extensions using quiescence search, and return the static evaluation at the q-root.
+        if data.depth <= Depth::NIL
+        {
+            const QUIESCENCE_DEPTH: Depth = Depth::new(2);
 
-        // If we have a depth constraint, enforce it here by returning the heuristic's evaluation.
-        // We always have the trivial heuristic of max depth.
-        if data.depth == global_data.args.depth() || game_over
-        {
-            thread_data.leaf_count += 1;
-            return Self::evaluate_board(global_data, thread_data);
-        }
-        else
-        {
-            thread_data.stem_count += 1;
+            let q_data = ABData {
+                a:     data.a,
+                b:     data.b,
+                depth: QUIESCENCE_DEPTH,
+            };
+
+            return Self::quiescence(global_data, thread_data, q_data);
         }
 
         let pre_alpha = data.a;
+        let mut candidate = None;
+        let board = thread_data.board.clone();
 
-        let mut best_score = -NAN;
-        let mut best_mv = MoveToken::default();
-        let mut new_variation = Variation::default();
-
-        let next_data = AlphaBetaSearchData {
-            a:     -data.b,
-            b:     -data.a,
-            depth: data.depth + 1,
-        };
-
-        let prev = thread_data.board.clone();
-
-        // Recurse on the movelist, but only check standard position to narrow the space.
-        for mv in super::PrioritizingMoveGenerator::new(&thread_data.board, true)
+        // We might have a good move in the table.
+        if let Some(score) = global_data
+            .transpositions
+            .check(board.zobrist(), data.depth, &mut candidate, &mut data.a, &mut data.b)
         {
-            // Saving some time here by living on the edge...
-            // If move generation breaks, we panic.
+            return Some(score);
+        }
 
-            thread_data.board.play_unchecked(&mv);
-            let score = -Self::alpha_beta(global_data, thread_data, next_data, &mut new_variation);
-            thread_data.board = prev.clone();
+        // Null move observation holds?
+        if Self::bugzwang(global_data, thread_data, data.clone())? >= data.b
+        {
+            return Some(data.b);
+        }
 
-            // Failure (beta-cutoff).
-            if score >= data.b
+        let mut moves = super::PrioritizingMoveGenerator::new(&board, false).collect::<Vec<_>>();
+
+        // If we are stunlocked, we're probably dead.
+        if moves[0] == Move::Pass
+        {
+            return Some(MINIMUM_LOSS);
+        }
+        // Singular extensions.
+        else if moves.len() == 1
+        {
+            data.depth += Depth::PLY;
+        }
+
+        // Try our table move first.
+        if let Some(table_move) = candidate
+        {
+            for i in 0..moves.len()
             {
-                let failed_cutoff = TTEntry {
-                    key,
-                    score: data.b,
-                    depth: data.depth,
-                    age: TTAge {
-                        bound: TTBound::Lower,
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                };
-
-                global_data.transpositions.store(&failed_cutoff, data.depth.floor() as usize);
-                return data.b;
-            }
-
-            // Found next best move, so keep it.
-            if score >= best_score
-            {
-                best_score = score;
-
-                if score >= data.a
+                if moves[i] == table_move
                 {
-                    // Then take the variation from the recursive step and load it into the outvariation.
-                    best_mv = mv.into();
-                    variation.load(mv, &new_variation);
-                    data.a = score;
-                }
-
-                // Cutoff.
-                if data.a >= data.b
-                {
+                    moves[0..i + 1].rotate_right(1);
                     break;
                 }
             }
         }
 
-        // Determine which kind of score we found at this branch.
-        let bound = if best_score >= data.b
+        let mut best_score = MINIMUM_LOSS;
+        let mut best_mv = moves[0];
+        let mut null_window = false;
+
+        for mv in moves.iter()
         {
-            TTBound::Lower
-        }
-        else if best_score > pre_alpha
-        {
-            TTBound::Exact
-        }
-        else 
-        {
-            TTBound::Upper
-        };
+            thread_data.play(mv);
 
-        // Don't store nulls (Move::Pass) in the table.
-        if best_mv.is_some()
-        {
-            // Store the best move from above.
-            let best_entry = TTEntry {
-                key,
-                mv: best_mv,
-                score: best_score,
-                depth: data.depth,
-                age: TTAge { bound, ..Default::default() },
-                ..Default::default()
-            };
-            global_data.transpositions.store(&best_entry, data.depth.floor() as usize);
-            log::trace!(
-                "found {: ^7} of score {: >6} (depth {: ^4})",
-                Option::<Move>::from(best_mv).unwrap(),
-                best_score,
-                data.depth
-            );
-        }
-
-        best_score
-    }
-
-    // Performs the aspiration loop until an exact score is found.
-    fn aspiration_search(
-        global_data: &GlobalData,
-        thread_data: &mut ThreadData,
-        window_data: &mut AspirationSearchData,
-        search_depth: Depth,
-    ) -> Option<Depth>
-    {
-        let mut depth = search_depth;
-
-        loop
-        {
-            let search_data = AlphaBetaSearchData {
-                a: window_data.window.a,
-                b: window_data.window.b,
-                depth,
-            };
-
-            // Determine a score for the position.
-            window_data.variation.score = Self::alpha_beta(global_data, thread_data, search_data, &mut window_data.variation);
-
-            if global_data.should_stop()
+            let v = if null_window
             {
-                return None;
-            }
+                let null_data = ABData {
+                    a:     -data.a - 1,
+                    b:     -data.a,
+                    depth: data.depth - Depth::PLY,
+                };
 
-            // Failed, so we need to adjust the window and try again.
-            if window_data.window.a != -INF && window_data.variation.score <= window_data.window.a
-            {
-                window_data.window.move_down(window_data.variation.score, depth);
-                thread_data.prev();
-                continue;
-            }
+                let attempt = -Self::alpha_beta(global_data, thread_data, null_data, Some(*mv))?;
 
-            // The line is either fail-high or correct, so keep it!
-            thread_data.next(&window_data.variation);
-
-            // Caused a cut-off, so we need to adjust the window and try again.
-            if window_data.window.b != INF && window_data.variation.score >= window_data.window.b
-            {
-                window_data.window.move_up(window_data.variation.score, depth);
-                if window_data.variation.score.abs() < MINIMUM_WIN
+                if (data.a + 1..=data.b - 1).contains(&attempt)
                 {
-                    let min = (search_depth / 2).max(Depth::PLY);
-                    depth = (depth - 1).max(min);
-                }
-                continue;
-            }
+                    let next = ABData {
+                        a: -data.b,
+                        b: -attempt,
+                        depth: data.depth - Depth::PLY
+                    };
 
-            let score = window_data.variation.score;
-            window_data.average_score = if window_data.average_score == NAN
-            {
-                score
+                    -Self::alpha_beta(global_data, thread_data, next, Some(*mv))?
+                }
+                else
+                {
+                    attempt
+                }
             }
             else
             {
-                (2 * score + window_data.average_score) / 3
+                let next = ABData {
+                    a:     -data.b,
+                    b:     -data.a,
+                    depth: data.depth - Depth::PLY,
+                };
+
+                -Self::alpha_beta(global_data, thread_data, next, Some(*mv))?
             };
 
-            return if global_data.stopped.load(Ordering::SeqCst) { None } else { Some(depth) };
+            thread_data.board = board.clone();
+
+            if v > best_score 
+            {
+                best_score = v;
+                best_mv = *mv;
+            }
+
+            if v > data.a
+            {
+                data.a = v;
+                null_window = true;
+            }
+
+            if data.a >= data.b
+            {
+                let _p = prev;
+                break;
+            }
+        }
+
+        thread_data.leaf_count -= 1;
+        thread_data.stem_count += 1;
+
+        // Something is wrong if we're getting here with passes.
+        assert!(best_mv != Move::Pass);
+
+        let entry = TTEntry {
+            key: thread_data.board.zobrist(),
+            mv: best_mv.into(),
+            depth: data.depth.clone(),
+            score: best_score,
+            age: TTAge::compute(best_score, pre_alpha, data.b)
+        };
+
+        global_data.transpositions.store(&entry);
+        Some(scores::normalize(best_score))
+    }
+
+    // Performs the aspiration loop until an exact score is found.
+    fn aspiration_search(global_data: &GlobalData, thread_data: &mut ThreadData, search_depth: Depth, window: i32) -> Option<()>
+    {
+        if search_depth < Depth::new(2)
+        {
+            Some(())
+        }
+        else
+        {
+            let target_score = thread_data.target;
+            let search_data = ABData {
+                a:     target_score.saturating_sub(window).max(MINIMUM_LOSS),
+                b:     target_score.saturating_add(window).min(MINIMUM_WIN),
+                depth: search_depth,
+            };
+
+            Self::alpha_beta(global_data, thread_data, search_data, None)?;
+            Some(())
         }
     }
 
+    // Looks for the null move observation.
+    fn bugzwang(global_data: &GlobalData, thread_data: &mut ThreadData, search_data: ABData) -> Option<i32>
+    {
+        const DEPTH_REDUCTION: Depth = Depth::new(2);
+        
+        let data = search_data;
+        let board = thread_data.board.clone();
+        let movegen = super::PrioritizingMoveGenerator::new(&board, false).collect::<Vec<_>>();
+
+        if movegen.contains(&Move::Pass)
+        {
+            if data.depth > DEPTH_REDUCTION && Self::evaluate_board(&board) >= data.b
+            {
+                let next_data = ABData {
+                    a: -data.b,
+                    b: -data.b + 1,
+                    depth: data.depth - DEPTH_REDUCTION
+                };
+
+                thread_data.play(&Move::Pass);
+                let v = -Self::alpha_beta(global_data, thread_data, next_data, None)?;
+                thread_data.board = board.clone();
+
+                if v >= data.b
+                {
+                    return Some(v);
+                }
+            }
+        }
+
+        Some(MINIMUM_LOSS)
+    }
+
     /// Performs the main iterative deepening loop.
-    pub(super) fn iterative_search(global_data: &GlobalData, thread_data: &mut ThreadData, is_main: bool)
+    pub(super) fn iterative_search(global_data: &GlobalData, thread_data: &mut ThreadData)
     {
         // We vary the starting depth of each thread a bit, so that we can cover different portions of the
         // game tree. Some work done early by deeper threads prepares the transposition table for the threads
         // that start closer to the real position.
-        const DEPTH_VARIANCE_BY_THREAD: i32 = 8;
+        const DEPTH_VARIANCE_BY_THREAD: i32 = 2;
 
         let search_range = Depth::new(1) + thread_data.id as i32 % DEPTH_VARIANCE_BY_THREAD..=global_data.args.depth();
 
-        // At each depth, we try to narrow the window if possible, but if the search fails, we are forced to
-        // undergo a huge (costly) search on the next iteration by setting the window size to be unbounded.
-        let mut window_data = AspirationSearchData::default();
+        // Get the root moves so we can reorder them.
+        let board = thread_data.board.clone();
+        let mut moves = super::PrioritizingMoveGenerator::new(&board, true)
+            .map(|mv| ScoredMove { mv, score: 0 })
+            .collect::<Vec<_>>();
 
         for search_depth in search_range
         {
-            thread_data.depth = search_depth;
-
-            // If we ran out of time, we should quit early. Non-main threads will follow at the end of the depth.
-            if is_main && global_data.should_stop()
+            // Try our window search first.
+            if Self::aspiration_search(global_data, thread_data, search_depth, ABData::ASPIRATION_WINDOW).is_none()
             {
                 break;
             }
 
-            // The aspiration main loop might choose a different depth.
-            let Some(depth) = Self::aspiration_search(global_data, thread_data, &mut window_data, search_depth)
-            else
+            // Conduct a search from the root, reordering moves in greatest-score-order while doing so.
+            if Self::reordering_search(global_data, thread_data, &mut moves, search_depth).is_none()
             {
                 break;
             };
 
-            if depth > AspirationWindow::MIN_DEPTH
-            {
-                window_data.window = AspirationWindow::at(window_data.average_score, depth);
-            }
-            else
-            {
-                window_data.window = AspirationWindow::default();
-            }
-
             // Update the max depth window seen.
-            if depth.floor() as u64 > global_data.max_depth.load(Ordering::SeqCst)
+            if search_depth.floor() as u64 > global_data.max_depth.load(Ordering::SeqCst)
             {
-                global_data.max_depth.store(depth.floor() as u64, Ordering::SeqCst);
+                global_data.max_depth.store(search_depth.floor() as u64, Ordering::SeqCst);
             }
 
-            // For non-main threads, this might be a good place to stop.
-            if global_data.should_stop()
+            // Check the root result. If it's a win score, we just abort early.
+            let hit = global_data.transpositions.load(board.zobrist()).unwrap();
+            
+            // Remember this result.
+            thread_data.target = hit.score;
+            thread_data.best_move = hit.mv.into();
+
+            // Load the principal variation scores from the table.
+            global_data
+                .transpositions
+                .get_principal_variation(&board, &mut thread_data.variation);
+
+            if scores::reconstruct(hit.score).abs() == MINIMUM_WIN
+            {
+                break;
+            }
+        }
+    }
+
+    // Computes exciting extensions at leaves to ensure we don't miss tactical resolutions due to the horizon effect.
+    fn quiescence(global_data: &GlobalData, thread_data: &mut ThreadData, search_data: ABData) -> Option<i32>
+    {
+        if global_data.should_stop()
+        {
+            return None;
+        }
+
+        let mut data = search_data;
+
+        if data.depth <= Depth::NIL || matches!(thread_data.board.state(), GameState::WhiteWins | GameState::BlackWins | GameState::Draw)
+        {
+            return Some(Self::evaluate_board(&thread_data.board));
+        }
+        
+        let board = thread_data.board.clone();
+        let moves = board.generate_tactical_moves();
+        let mut best_score = MINIMUM_LOSS;
+
+        if moves.is_empty()
+        {
+            return Some(Self::evaluate_board(&board));
+        }
+
+        for mv in moves.iter()
+        {
+            let next_data = ABData {
+                a: -data.b,
+                b: -data.a,
+                depth: data.depth - Depth::PLY
+            };
+
+            thread_data.play(mv);
+            let v = -Self::quiescence(global_data, thread_data, next_data)?;
+            thread_data.board = board.clone();
+
+            best_score = best_score.max(v);
+            data.a = data.a.max(v);
+
+            if data.a >= data.b 
             {
                 break;
             }
         }
 
-        // If we managed to search to the desired depth, we'll have to stop manually.
-        if is_main
+        Some(best_score)
+    }
+
+    /// Searches through the moves, reordering them by their evaluation.
+    fn reordering_search(global_data: &GlobalData, thread_data: &mut ThreadData, moves: &mut [ScoredMove], depth: Depth) -> Option<()>
+    {
+        let mut data = ABData {
+            a:     MINIMUM_LOSS,
+            b:     MINIMUM_WIN,
+            depth: depth - Depth::PLY,
+        };
+
+        let board = thread_data.board.clone();
+
+        for mv in moves.iter_mut()
         {
-            global_data.stopped.store(true, Ordering::SeqCst);
+            thread_data.play(&mv.mv);
+            mv.score = -Self::alpha_beta(global_data, thread_data, data.clone(), Some(mv.mv.clone()))?;
+            thread_data.board = board.clone();
+
+            data.a = data.a.max(mv.score);
         }
+
+        // Put the strongest moves at the front.
+        moves.sort_by_key(|mv| -mv.score);
+        let ScoredMove { mv, score } = moves[0];
+
+        let entry = TTEntry {
+            key: thread_data.board.zobrist(),
+            mv: mv.into(),
+            score,
+            depth,
+            age: TTAge::compute(score, data.a, data.b),
+        };
+
+        global_data.transpositions.store(&entry);
+        Some(())
     }
 }
 
 #[derive(Clone, Debug)]
 /// Data we need in the aspiration loop.
-struct AspirationSearchData
-{
-    pub average_score: i32,
-    pub variation:     Variation,
-    pub window:        AspirationWindow,
-}
-
-impl Default for AspirationSearchData
-{
-    fn default() -> Self
-    {
-        AspirationSearchData {
-            average_score: scalars::NAN,
-            variation:     Variation::default(),
-            window:        AspirationWindow::default(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-/// An aspiration window for narrower search cutoffs.
-struct AspirationWindow
-{
-    pub a_fails: i32,
-    pub a:       i32,
-    pub b_fails: i32,
-    pub b:       i32,
-    pub mid:     i32,
-}
-
-impl Default for AspirationWindow
-{
-    /// Returns the unbounded aspiration window.
-    fn default() -> Self
-    {
-        AspirationWindow {
-            a_fails: 0,
-            a:       -INF,
-            b_fails: 0,
-            b:       INF,
-            mid:     0,
-        }
-    }
-}
-
-impl AspirationWindow
-{
-    const ASPIRATION_WINDOW: i32 = 6;
-
-    /// The minimum depth of an aspiration window.
-    pub const MIN_DEPTH: Depth = Depth::new(Self::ASPIRATION_WINDOW - 1);
-
-    /// Returns a window centred around the given score.
-    ///
-    /// If that score is a win, then the window is unbounded, because for a majority of the search,
-    /// it is unlikely that a found win is forced - thus a narrow search would fail anyways.
-    pub fn at(score: i32, depth: Depth) -> Self
-    {
-        if score >= MINIMUM_WIN
-        {
-            AspirationWindow {
-                mid: score,
-                ..Default::default()
-            }
-        }
-        else
-        {
-            let discriminant = Self::discriminant(depth);
-            AspirationWindow {
-                a: score - discriminant,
-                b: score + discriminant,
-                mid: score,
-                ..Default::default()
-            }
-        }
-    }
-
-    fn discriminant(depth: Depth) -> i32
-    {
-        (Self::ASPIRATION_WINDOW + (50 / depth.floor() - (Self::ASPIRATION_WINDOW / 2))).max(10)
-    }
-
-    /// Widens the window down, i.e., on a fail-high.
-    pub fn move_down(&mut self, score: i32, depth: Depth)
-    {
-        self.mid = score;
-
-        let diff = Self::discriminant(depth) << (self.a_fails + 1);
-        if diff > Self::ASPIRATION_WINDOW.pow(4)
-        {
-            self.a = -INF;
-            return;
-        }
-
-        self.b = (self.a + self.b) / 2;
-        self.a = self.mid - diff;
-        self.a_fails += 1;
-    }
-
-    /// Widens the window up, i.e., on a success.
-    pub fn move_up(&mut self, score: i32, depth: Depth)
-    {
-        self.mid = score;
-
-        let diff = Self::discriminant(depth) << (self.b_fails + 1);
-        if diff > Self::ASPIRATION_WINDOW.pow(4)
-        {
-            self.b = INF;
-            return;
-        }
-
-        self.b = self.mid + diff;
-        self.b_fails += 1;
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct AlphaBetaSearchData
+struct ABData
 {
     pub a:     i32,
     pub b:     i32,
     pub depth: Depth,
+}
+
+impl Default for ABData
+{
+    fn default() -> Self
+    {
+        ABData {
+            a:     0,
+            b:     0,
+            depth: Depth::NIL,
+        }
+    }
+}
+
+impl ABData
+{
+    // The default radius of the aspiration window.
+    pub const ASPIRATION_WINDOW: i32 = 50;
 }

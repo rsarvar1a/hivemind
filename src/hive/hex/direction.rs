@@ -2,7 +2,7 @@ use super::consts::*;
 use crate::prelude::*;
 
 #[repr(u16)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// A direction on a hexagonal grid.
 pub enum Direction
 {

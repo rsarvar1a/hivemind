@@ -4,6 +4,133 @@ use crate::prelude::*;
 
 impl Board
 {
+    /// Generates all valid moves in the position, not including Pass.
+    pub fn generate_moves(&self, standard_position: bool) -> Vec<Move>
+    {
+        let mut moves: Vec<Move> = self.generate_non_throws(standard_position);
+        self.generate_throws_into(&mut moves);
+
+        // {
+        //     let mut capture = None;
+        //     for mv in &moves
+        //     {
+        //         let check = self.check(&mv);
+        //         if let Err(err) = check
+        //         {
+        //             let err_here = err.chain(Error::new(Kind::InvalidMove, format!("Move {} is invalid.", mv)));
+        //             capture = match capture
+        //             {
+        //                 | Some(c) => Some(err_here.chain(c)),
+        //                 | None => Some(err_here),
+        //             };
+        //         }
+        //     }
+        //     if let Some(err) = capture
+        //     {
+        //         let with_gamestring = Error::new(
+        //             Kind::LogicError,
+        //             format!("Generated invalid moves in position {}.", GameString::from(self)),
+        //         );
+        //         let base = Error::holy_shit(err.chain(with_gamestring));
+        //         panic!("{}", base);
+        //     }
+        // }
+
+        moves
+    }
+
+    /// Only generates tactical moves for quiescence search. 
+    pub fn generate_tactical_moves(&self) -> Vec<Move>
+    {
+        // Don't waste time here in the opening.
+        if self.turn() < 8 
+        {
+            return Vec::new();
+        }
+
+        let mut moves: Vec<Move> = Vec::new();
+        let past = self.history.get_past();
+
+        // Check our last placement to see what its extensions are.
+        // This is because placing a piece is a loss of pinning tempo on the board,
+        // and should yield power elsewhere.
+        'attack: {
+            if let Move::Place(piece, _) = past[past.len() - 2].mv
+            {
+                let entry = past[past.len() - 2];
+                let destination = entry.patch.unwrap().to;
+
+                // Check if this is a direct drop. A direct drop implies we are covering
+                // the queen with a piece of our own, so we can't just check the tops of
+                // the neighbouring stacks.
+
+                if let Some(enemy_queen_location) = self.queen(self.to_move().flip())
+                {
+                    let mut direct_drop = false;
+                    for direction in Direction::all()
+                    {
+                        let reference = destination + direction;
+                        if reference == enemy_queen_location
+                        {
+                            direct_drop = true;
+                            break;
+                        }
+                    }
+
+                    if direct_drop
+                    {
+                        break 'attack;
+                    }
+                }
+
+                // Otherwise, this is too quiet, so we should check extensions.
+
+                self.generate_moves_for(&piece, &mut moves);
+                return moves;
+            }
+        }
+
+        // If we didn't just make a quiet move, but the opposing player did, generate 
+        // a full subtree to allow the opposing player the opportunity to find extensions.
+        'defense: {
+            if let Move::Place(..) = past[past.len() - 1].mv
+            {
+                let entry = past[past.len() - 1];
+                let destination = entry.patch.unwrap().to;
+
+                // Once again, check if this is a direct drop.
+
+                if let Some(friendly_queen_location) = self.queen(self.to_move())
+                {
+                    let mut direct_drop = false;
+                    for direction in Direction::all()
+                    {
+                        let reference = destination + direction;
+                        if reference == friendly_queen_location
+                        {
+                            direct_drop = true;
+                            break;
+                        }
+                    }
+
+                    if direct_drop
+                    {
+                        break 'defense;
+                    }
+                }
+
+                // Otherwise, generate a full subtree.
+
+                moves = self.generate_moves(false);
+            }
+        }
+
+        moves
+    }
+}
+
+impl Board
+{
     /// Generates true moves for the player to move (not including throws).
     pub(super) fn generate_moves_into(&self, moves: &mut Vec<Move>)
     {
@@ -21,8 +148,8 @@ impl Board
             .enumerate()
             // Get the pieces from the indices.
             .map(|(i, on_board)| (Piece::from(i as u8), on_board))
-            // Drop the pieces that are pinned.
-            .filter_map(|(piece, on_board)| on_board.map(|_| (!self.is_pinned(&piece)).then_some(piece)).unwrap_or(None))
+            // Drop the pieces that are pinned, and ensure they're not stunned.
+            .filter_map(|(piece, on_board)| on_board.map(|loc| (!self.is_pinned(&piece) && self.stunned != Some(loc)).then_some(piece)).unwrap_or(None))
             // Only move pieces owned by the current player.
             .filter(|piece| piece.player == to_move)
             // Take uniques.
@@ -159,22 +286,31 @@ impl Board
     /// "Unresolves" a hex, giving a reference that can be encoded into a movestring.
     fn reference(&self, moving: &Piece, hex: Hex) -> Option<NextTo>
     {
-        // Not allowed to reference itself.
-        let pieces = self.neighbours(hex)
-            .into_iter()
-            .filter(|piece| *piece != *moving)
-            .collect::<HashSet<_>>();
+        // Check for climbing.
+        if let Some(stack) = self.top(hex)
+        {
+            return Some(NextTo { piece: stack, direction: None });
+        }
 
-        if pieces.is_empty()
+        // Return the best directional marker in some sort of clockwise order.
+        for dir in Direction::all()
         {
-            None
+            let loc = hex - dir;
+            if ! self.occupied(loc)
+            {
+                continue;
+            }
+
+            let piece = self.top(loc).unwrap();
+            if piece == *moving
+            {
+                continue;
+            }
+
+            return Some(NextTo { piece, direction: Some(dir) });
         }
-        else
-        {
-            let piece = pieces.into_iter().next().unwrap();
-            let direction = Direction::to(self.pieces[piece.index() as usize].unwrap(), hex);
-            Some(NextTo { piece, direction })
-        }
+
+        None
     }
 }
 
@@ -201,7 +337,7 @@ impl Board
     }
 
     /// Finds all of the ways this piece can move.
-    fn generate_moves_for(&self, piece: &Piece, moves: &mut Vec<Move>)
+    pub(super) fn generate_moves_for(&self, piece: &Piece, moves: &mut Vec<Move>)
     {
         // This is a convenient way to enter the generation logic while allowing the Mosquito an easy way to recurse on its neighbours.
         self.generate_moves_for_kind(piece, piece.kind, moves)
