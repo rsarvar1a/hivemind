@@ -19,7 +19,7 @@ pub mod consts
 {
     use super::Hex;
 
-    const FACT: Hex = 5;
+    const FACT: Hex = 4;
     const _FACT_FITS: () = assert!(FACT <= 8);
 
     pub const ROWS: Hex = 2u16.pow(FACT as u32);

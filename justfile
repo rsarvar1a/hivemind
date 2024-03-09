@@ -17,8 +17,12 @@ gdb:
     && gdb --ex=run --args env -i RUST_BACKTRACE=1 target/debug/hivemind
 
 perf:
-    -cargo flamegraph --profile flame
-    mkdir -p perf && mv flamegraph.svg perf/graph.svg && mv perf.data perf/perf.data
+    mv perf/graph.svg perf/graph.svg.old
+    -cargo flamegraph --profile flame -o perf/graph.svg
+    just perf-save
+
+perf-save:
+    mkdir -p perf && rm perf.data.old && mv perf.data perf/perf.data
 
 run:
     just build \

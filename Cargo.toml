@@ -19,9 +19,13 @@ multiset = "0.0.5"
 rand = "0.8.5"
 regex = "1.10.3"
 
+[profile.dev]
+incremental = true
+
 [profile.release]
 lto = "fat"
 strip = true
+incremental = true
 
 [profile.flame]
 inherits = "release"

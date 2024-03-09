@@ -99,16 +99,7 @@ impl ThreadData
     /// Plays a move but leverages the cache.
     pub fn play(&mut self, mv: &Move)
     {
-        let key = (self.board.zobrist(), *mv);
-        if let Some(board) = self.cache.get(&key)
-        {
-            self.board = board.clone();
-        }
-        else
-        {
-            self.board.play_unchecked(mv);
-            self.cache.insert(key, self.board.clone());
-        }
+        self.board.play_unchecked(mv);
     }
 
     /// Sets up the thread data for the upcoming search.

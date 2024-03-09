@@ -422,6 +422,7 @@ impl Board
     fn generate_ladybug(&self, piece: &Piece, moves: &mut Vec<Move>)
     {
         let from = self.pieces[piece.index() as usize].unwrap();
+
         let to = self
             .field
             .neighbours(from)

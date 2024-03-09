@@ -715,27 +715,6 @@ impl Board
         self.zobrist.hash(piece, hex, height);
     }
 
-    /// Gives a better answer to the pillbug question by generating everything that the piece can do on its own.
-    fn is_pillbug_move(&self, mv: &Move) -> bool
-    {
-        // Short circuit: placements and passes cannot be pillbug actions.
-        let Move::Move(piece, _) = mv
-        else
-        {
-            return false;
-        };
-
-        // Short-circuit: a piece of the opponent's colour can only possibly move due to a throw.
-        if piece.player != self.to_move()
-        {
-            return true;
-        }
-
-        let mut moves = Vec::new();
-        self.generate_moves_for(&piece, &mut moves);
-        !moves.contains(&mv)
-    }
-
     /// Translate a move into a patch, so we can supplement the history.
     fn patch_from(&self, mv: &Move) -> Option<Patch>
     {
@@ -791,11 +770,7 @@ impl Board
 
                 // It is now immune to the Pillbug on the next turn.
                 self.set_immune(Some(hex));
-
-                // Apply a stun if this was a pillbug move.
-                let this_mv = Move::Move(*piece, *nextto);
-                let hex = if self.is_pillbug_move(&this_mv) { Some(hex) } else { None };
-                self.set_stun(hex);
+                self.set_stun(Some(hex));
             }
             | Move::Pass =>
             {

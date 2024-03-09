@@ -162,8 +162,13 @@ impl StrongestEvaluator
     }
 
     // Performs the aspiration loop until an exact score is found.
-    fn aspiration_search(global_data: &GlobalData, thread_data: &mut ThreadData, search_depth: Depth, window: i32) -> Option<()>
+    fn aspiration_search(global_data: &GlobalData, thread_data: &mut ThreadData, search_depth: Depth, window: Option<i32>) -> Option<()>
     {
+        let Some(window) = window else 
+        {
+            return Some(());
+        };
+
         if search_depth < Depth::new(2)
         {
             Some(())
@@ -221,7 +226,7 @@ impl StrongestEvaluator
         // We vary the starting depth of each thread a bit, so that we can cover different portions of the
         // game tree. Some work done early by deeper threads prepares the transposition table for the threads
         // that start closer to the real position.
-        const DEPTH_VARIANCE_BY_THREAD: i32 = 2;
+        const DEPTH_VARIANCE_BY_THREAD: i32 = 4;
 
         let search_range = Depth::new(1) + thread_data.id as i32 % DEPTH_VARIANCE_BY_THREAD..=global_data.args.depth();
 
@@ -377,5 +382,5 @@ impl Default for ABData
 impl ABData
 {
     // The default radius of the aspiration window.
-    pub const ASPIRATION_WINDOW: i32 = 50;
+    pub const ASPIRATION_WINDOW: Option<i32> = Some(50);
 }
