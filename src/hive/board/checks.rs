@@ -62,6 +62,25 @@ impl Board
         Ok(())
     }
 
+    /// Whether or not this movement occurred due to the actions of a Pillbug.
+    pub(super) fn check_throw_satisfied(&self, from: Hex, to: Hex) -> bool
+    {
+        // Ensure the target can be thrown.
+
+        if self.immune.map(|hex| hex == from).unwrap_or(false)
+        {
+            return false;
+        }
+
+        // Find which neighbour threw the pillbug.
+
+        self
+            .pieces_neighbouring(from)
+            .into_iter()
+            .filter(|piece| self.can_throw_another(piece))
+            .any(|piece| self.check_throw_via_satisfied(from, piece, to))
+    }
+
     /// Whether or not the movement can be interpreted as a throw if the given piece is doing the throwing.
     pub fn check_throw_via(&self, from: Hex, via: Piece, to: Hex) -> Result<()>
     {
@@ -73,37 +92,13 @@ impl Board
             .map_err(|err| err.chain(base))
     }
 
-    #[inline]
-    /// Ensures that a bug can crawl one hex.
-    pub(super) fn ensure_crawl(&self, from: Hex, to: Hex, ghosting: bool) -> Result<()>
+    /// Whether or not the movement can be interpreted as a throw if the given piece is doing the throwing.
+    pub fn check_throw_via_satisfied(&self, from: Hex, via: Piece, to: Hex) -> bool
     {
-        self.field
-            .ensure_constant_contact(from, to, ghosting)
-            .and_then(|_| self.field.ensure_freedom_to_move(from, to, ghosting))
-    }
-
-    #[inline]
-    /// Ensures the movement both starts and ends on the ground, but makes no other guarantees.
-    pub(super) fn ensure_ground_movement(&self, from: Hex, to: Hex) -> Result<()>
-    {
-        let base = Error::new(Kind::LogicError, "This movement is required to start and end on the ground.".into());
-
-        let height_f = self.field.height(from).unwrap_or(0);
-        let height_t = self.field.height(to).map(|height| height + 1).unwrap_or(1);
-
-        if height_f > 1
-        {
-            let err = Error::new(Kind::LogicError, format!("Starting stack is {} bugs tall.", height_f));
-            return Err(err.chain(base));
-        }
-
-        if height_t > 1
-        {
-            let err = Error::new(Kind::LogicError, format!("Ending stack height would be {}.", height_t));
-            return Err(err.chain(base));
-        }
-
-        Ok(())
+        let intermediate = self.pieces[via.index() as usize].unwrap();
+        self.ensure_ground_movement_satisfied(from, to)
+            && self.ensure_crawl_satisfied(from, intermediate, false)
+            && self.ensure_crawl_satisfied(intermediate, to, true)
     }
 }
 

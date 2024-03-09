@@ -164,7 +164,8 @@ impl StrongestEvaluator
     // Performs the aspiration loop until an exact score is found.
     fn aspiration_search(global_data: &GlobalData, thread_data: &mut ThreadData, search_depth: Depth, window: Option<i32>) -> Option<()>
     {
-        let Some(window) = window else 
+        let Some(window) = window
+        else
         {
             return Some(());
         };

@@ -32,6 +32,23 @@ impl Board
     }
 
     #[inline]
+    /// Ensures that a bug can crawl one hex.
+    pub(super) fn ensure_crawl(&self, from: Hex, to: Hex, ghosting: bool) -> Result<()>
+    {
+        self.field
+            .ensure_constant_contact(from, to, ghosting)
+            .and_then(|_| self.field.ensure_freedom_to_move(from, to, ghosting))
+    }
+
+    #[inline]
+    /// Ensures that a bug can crawl one hex.
+    pub(super) fn ensure_crawl_satisfied(&self, from: Hex, to: Hex, ghosting: bool) -> bool
+    {
+        self.field
+            .ensure_constant_contact_satisfied(from, to, ghosting) && self.field.ensure_freedom_to_move_satisfied(from, to, ghosting)
+    }
+
+    #[inline]
     /// Ensures the piece can be dropped here.
     pub(super) fn ensure_drop(&self, piece: &Piece, hex: Hex) -> Result<()>
     {
@@ -64,6 +81,39 @@ impl Board
         {
             Ok(())
         }
+    }
+
+    #[inline]
+    /// Ensures the movement both starts and ends on the ground, but makes no other guarantees.
+    pub(super) fn ensure_ground_movement(&self, from: Hex, to: Hex) -> Result<()>
+    {
+        let base = Error::new(Kind::LogicError, "This movement is required to start and end on the ground.".into());
+
+        let height_f = self.field.height(from).unwrap_or(0);
+        let height_t = self.field.height(to).map(|height| height + 1).unwrap_or(1);
+
+        if height_f > 1
+        {
+            let err = Error::new(Kind::LogicError, format!("Starting stack is {} bugs tall.", height_f));
+            return Err(err.chain(base));
+        }
+
+        if height_t > 1
+        {
+            let err = Error::new(Kind::LogicError, format!("Ending stack height would be {}.", height_t));
+            return Err(err.chain(base));
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    /// Ensures the movement both starts and ends on the ground, but makes no other guarantees.
+    pub(super) fn ensure_ground_movement_satisfied(&self, from: Hex, to: Hex) -> bool
+    {
+        let height_f = self.field.height(from).unwrap_or(0);
+        let height_t = self.field.height(to).map(|height| height + 1).unwrap_or(1);
+        height_f <= 1 && height_t <= 1
     }
 
     #[inline]
@@ -123,6 +173,11 @@ impl Board
             ));
         }
         Ok(())
+    }
+
+    pub(super) fn ensure_one_hive_satisfied(&self, piece: &Piece) -> bool
+    {
+        ! self.is_pinned(piece)
     }
 
     #[inline]

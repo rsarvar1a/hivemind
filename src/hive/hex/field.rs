@@ -7,14 +7,24 @@ use crate::prelude::*;
 pub struct Field
 {
     map: HashMap<Hex, u8>,
+    markers: Collection
 }
 
 impl FromIterator<Hex> for Field
 {
     fn from_iter<T: IntoIterator<Item = Hex>>(iter: T) -> Self
     {
+        let map: HashMap<Hex, u8> = iter.into_iter().map(|h| (h, 1)).collect();
+
+        let mut markers = Collection::default();
+        for hex in map.keys()
+        {
+            markers.insert(*hex);
+        }
+
         Field {
-            map: iter.into_iter().map(|h| (h, 1)).collect(),
+            map,
+            markers            
         }
     }
 }
@@ -27,12 +37,20 @@ impl From<Field> for HashSet<Hex>
     }
 }
 
+impl From<Field> for Collection
+{
+    fn from(value: Field) -> Self 
+    {
+        value.markers    
+    }
+}
+
 impl Field
 {
     /// Determines whether this hex is inside the field.
     pub fn contains(&self, h: Hex) -> bool
     {
-        self.map.contains_key(&h)
+        self.markers.contains(h)
     }
 
     /// Ensures that the two hexes are neighbours, and returns their common neighbours.
@@ -50,6 +68,12 @@ impl Field
         };
 
         Ok((cw, ccw))
+    }
+
+    /// Ensures that the two hexes are neighbours, and returns their common neighbours.
+    pub fn ensure_common_neighbours_satisfied(&self, from: Hex, to: Hex) -> Option<(Hex, Hex)>
+    {
+        hex::common_neighbours(from, to)
     }
 
     /// Ensures that a movement between two hexes satisfies the constant contact rule.
@@ -100,6 +124,34 @@ impl Field
             {
                 Ok(())
             }
+        }
+    }
+
+    /// Boolean of the above
+    pub fn ensure_constant_contact_satisfied(&self, from: Hex, to: Hex, ghosting: bool) -> bool
+    {
+        // Get the common neighbours between the two hexes to ensure they are neighbours.
+        let Some((cw, ccw)) = self.ensure_common_neighbours_satisfied(from, to)
+        else 
+        {
+            return false;
+        };
+
+        // The height we are moving from is correct, because we haven't decremented the height at that stack yet.
+        // The height of the destination should be incremented, because we would end up adding one if this movement were correct.
+        let ghosting = if ghosting { 1 } else { 0 };
+        let height_f = self.height(from).unwrap_or(1) + ghosting;
+        let height_t = self.height(to).map(|h| h + 1).unwrap_or(1);
+
+        if height_f.max(height_t) > 1
+        {
+            // Then the bug is always touching at least one bug, because either the from-stack or to-stack has a bug underneath and sharing an edge.
+            true
+        }
+        else
+        {
+            // Otherwise, there is nothing underneath our feet, and we need a neighbour to the side.
+            self.contains(cw) || self.contains(ccw)
         }
     }
 
@@ -155,6 +207,36 @@ impl Field
         }
     }
 
+    /// Boolean of the above.
+    pub fn ensure_freedom_to_move_satisfied(&self, from: Hex, to: Hex, ghosting: bool) -> bool
+    {
+        // Get the common neighbours between the two hexes to ensure they are neighbours.
+        let Some((cw, ccw)) = self.ensure_common_neighbours_satisfied(from, to)
+        else 
+        {
+            return false;
+        };
+
+        if self.contains(cw) && self.contains(ccw)
+        {
+            let height_cw = self.height(cw).unwrap();
+            let height_ccw = self.height(ccw).unwrap();
+
+            let ghosting = if ghosting { 1 } else { 0 };
+            let height_f = self.height(from).unwrap_or(1) + ghosting;
+            let height_t = self.height(to).map(|h| h + 1).unwrap_or(1);
+
+            let height_path = height_f.max(height_t);
+            let height_gate = height_cw.min(height_ccw);
+
+            height_gate < height_path
+        }
+        else
+        {
+            false
+        }
+    }
+
     /// Ensures an ant or spider move is possible for a given limit.
     pub fn ensure_perimeter_crawl(&self, from: Hex, to: Hex, distance: Option<u8>) -> Result<()>
     {
@@ -178,6 +260,12 @@ impl Field
         {
             Ok(())
         }
+    }
+
+    /// Boolean of the above.
+    pub fn ensure_perimeter_crawl_satisfied(&self, from: Hex, to: Hex, distance: Option<u8>) -> bool
+    {
+        self.find_crawls(from, distance).contains(&to)
     }
 
     /// Returns all ground hexes reachable by crawling some exact number of hexes.
@@ -252,6 +340,7 @@ impl Field
             if *o.get() == 1u8
             {
                 o.remove_entry();
+                self.markers.remove(hex);
             }
             else
             {
@@ -263,31 +352,48 @@ impl Field
     /// Adds a hex to the field.
     pub fn push(&mut self, hex: Hex)
     {
-        *self.map.entry(hex).or_insert(0) += 1;
+        if let MapEntry::Occupied(mut o) = self.map.entry(hex)
+        {
+            *o.get_mut() += 1;
+        }
+        else 
+        {    
+            self.map.insert(hex, 1u8);
+            self.markers.insert(hex);
+        }
     }
 }
 
 // An implementation Tarjan's algorithm for finding articulation points.
 
-#[derive(Clone, Copy, Debug, Default)]
-struct HexStats
-{
-    num: u8,
-    low: u8,
-}
-
-#[derive(Default)]
+#[derive(Clone)]
 struct DescentRecord
 {
-    visited: HashMap<Hex, HexStats>,
-    pinned:  HashSet<Hex>,
+    visited: Collection,
+    pinned:  Collection,
+    num:     [u8; hex::SIZE as usize],
+    low:     [u8; hex::SIZE as usize],
     count:   u8,
+}
+
+impl Default for DescentRecord
+{
+    fn default() -> Self
+    {
+        DescentRecord {
+            visited: Collection::default(),
+            pinned:  Collection::default(),
+            num:     [0; hex::SIZE as usize],
+            low:     [0; hex::SIZE as usize],
+            count:   0,
+        }
+    }
 }
 
 impl Field
 {
     /// Returns all of the pinned hexes.
-    pub fn find_pins(&self) -> HashSet<Hex>
+    pub fn find_pins(&self) -> Collection
     {
         if let Some(start) = self.map.keys().next()
         {
@@ -300,27 +406,21 @@ impl Field
         }
         else
         {
-            HashSet::new()
+            Collection::new()
         }
     }
 
     /// Recursively finds all cut vertices in the field.
     fn find_pins_recurse(&self, hex: Hex, parent: Option<Hex>, state: &mut DescentRecord)
     {
-        state.visited.insert(
-            hex,
-            HexStats {
-                num: state.count,
-                low: state.count,
-            },
-        );
+        state.visited.insert(hex);
+        state.num[hex as usize] = state.count;
+        state.low[hex as usize] = state.count;
         state.count += 1;
 
         let mut children = 0;
         for neighbour in self.neighbours(hex)
         {
-            let mut prev = state.visited.get(&hex).copied().unwrap();
-
             if let Some(par) = parent
             {
                 if par == neighbour
@@ -329,21 +429,18 @@ impl Field
                 }
             }
 
-            if let Some(neighbour_stats) = state.visited.get(&neighbour)
+            if state.visited.contains(neighbour)
             {
-                prev.low = prev.low.min(neighbour_stats.num);
-                state.visited.insert(hex, prev);
+                state.low[hex as usize] = state.low[hex as usize].min(state.num[neighbour as usize]);
             }
             else
             {
                 self.find_pins_recurse(neighbour, Some(hex), state);
                 children += 1;
 
-                let neighbour_stats = state.visited.get(&neighbour).copied().unwrap();
-                prev.low = prev.low.min(neighbour_stats.low);
-                state.visited.insert(hex, prev);
+                state.low[hex as usize] = state.low[hex as usize].min(state.low[neighbour as usize]);
 
-                if parent.is_some() && neighbour_stats.low >= prev.num
+                if parent.is_some() && state.low[neighbour as usize] >= state.num[hex as usize]
                 {
                     state.pinned.insert(hex);
                 }

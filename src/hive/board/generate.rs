@@ -229,10 +229,10 @@ impl Board
             // Iterate over the cartesian product of the throwing piece's neighbours.
             itertools::iproduct!(neighbours.iter(), neighbours.iter())
                 // Check if the source piece is pinned or not.
-                .filter(|(from, _t)| self.top(**from).map(|p| self.ensure_one_hive(&p).is_ok()).unwrap_or(false))
+                .filter(|(from, _t)| self.top(**from).map(|p| self.ensure_one_hive_satisfied(&p)).unwrap_or(false))
                 // Check if the piece can throw a bug from the source to the destination tile.
                 // This also checks the immunity state.
-                .filter(|(from, to)| self.check_throw(**from, **to).is_ok())
+                .filter(|(from, to)| self.check_throw_satisfied(**from, **to))
                 // Then construct the movement by figuring out which piece was thrown.
                 .for_each(|(from, to)| {
                     let moving = self.top(*from).unwrap();
@@ -334,9 +334,9 @@ impl Board
             // Drop destinations that are isolated.
             .filter(|to| self.reachable(piece, **to))
             // Drop movements that don't end at ground level.
-            .filter(|to| self.ensure_ground_movement(from, **to).is_ok())
+            .filter(|to| self.ensure_ground_movement_satisfied(from, **to))
             // Drop movements that violate freedom to move and constant contact.
-            .filter(|to| self.ensure_crawl(from, **to, false).is_ok())
+            .filter(|to| self.ensure_crawl_satisfied(from, **to, false))
             .for_each(|to| {
                 let reference = self.reference(piece, *to).unwrap();
                 moves.push(Move::Move(*piece, reference));
@@ -387,7 +387,7 @@ impl Board
             // Ensure destinations are neighboured.
             .filter(|to| self.reachable(piece, **to))
             // Drop movements that violate freedom to move and constant contact.
-            .filter(|to| self.ensure_crawl(from, **to, false).is_ok())
+            .filter(|to| self.ensure_crawl_satisfied(from, **to, false))
             .for_each(|to| {
                 let reference = self.reference(piece, *to).unwrap();
                 moves.push(Move::Move(*piece, reference));
@@ -428,21 +428,21 @@ impl Board
             .neighbours(from)
             .into_iter()
             // Get onto the hive with the first movement, only selecting in-hive neighbours.
-            .filter_map(|onto| self.ensure_crawl(from, onto, false).map(|_| (onto, self.field.neighbours(onto))).ok())
+            .filter_map(|onto| self.ensure_crawl_satisfied(from, onto, false).then_some((onto, self.field.neighbours(onto))))
             // Get the path tuples.
             .flat_map(|(onto, neighbours)| neighbours.into_iter().map(move |h| (onto, h)))
             // Remove any that doubled back to the start hex.
             .filter(|(.., ontop)| *ontop != from)
             // Move from an oh-hive hex to another on-hive hex, and get that destination's neighbours.
-            .filter_map(|(onto, ontop)| self.ensure_crawl(onto, ontop, true).map(|_| (onto, ontop, hex::neighbours(ontop))).ok())
+            .filter_map(|(onto, ontop)| self.ensure_crawl_satisfied(onto, ontop, true).then_some((onto, ontop, hex::neighbours(ontop))))
             // Get the path tuples.
             .flat_map(|(onto, ontop, neighbours)| neighbours.into_iter().map(move |h| (onto, ontop, h)))
             // Remove any that doubled back to a previous hex.
             .filter(|(onto, _, to)| *to != from && *to != *onto)
             // Remove any that aren't ground-level.
-            .filter(|(.., to)| self.ensure_ground_movement(from, *to).is_ok())
+            .filter(|(.., to)| self.ensure_ground_movement_satisfied(from, *to))
             // Drop down into that hex.
-            .filter_map(|(_, ontop, to)| self.ensure_crawl(ontop, to, true).map(|_| to).ok())
+            .filter_map(|(_, ontop, to)| self.ensure_crawl_satisfied(ontop, to, true).then_some(to))
             // Take uniques.
             .collect::<HashSet<Hex>>();
 

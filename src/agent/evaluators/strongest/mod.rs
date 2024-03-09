@@ -163,7 +163,7 @@ impl StrongestEvaluator
         let sct = self.thread_data.iter().map(|t| t.stem_count).sum::<u64>();
         let elapsed = self.global_data.start_time.elapsed();
         let el = elapsed.as_secs_f64().round();
-        let d = self.global_data.max_depth.load(Ordering::SeqCst);
+        let d = variation.moves.len();
         let lr = (lct as f64 / el).round() as i32;
         let sr = (sct as f64 / el).round() as i32;
         let el = el as i32;

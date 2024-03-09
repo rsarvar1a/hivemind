@@ -70,3 +70,56 @@ impl Sub<Direction> for Hex
         MASK & self.wrapping_add(rhs.inverse() as Hex)
     }
 }
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+/// A drop-in replacement specifically for HashSet<Hex> where the caller only needs to check set membership.
+///
+/// If you need to iterate, use a real collection.
+pub struct Collection([u64; Self::SIZE as usize]);
+
+impl Collection
+{
+    const SIZE: u64 = consts::SIZE as u64 / 64;
+    const MASK: u64 = Self::SIZE - 1;
+    const SHFT: u64 = (consts::SIZE as u64).trailing_zeros() as u64 - 6;
+
+    /// Determines whether or not this collection contains the given set.
+    pub fn contains(&self, hex: Hex) -> bool
+    {
+        let index = self.index_into_list(hex);
+        let read = self.index_into_word(hex);
+        (self.0[index] >> read) & 1 != 0
+    }
+
+    /// Inserts the given hex into the set.
+    pub fn insert(&mut self, hex: Hex)
+    {
+        let index = self.index_into_list(hex);
+        let write = 1 << self.index_into_word(hex);
+        self.0[index] |= write;
+    }
+
+    /// Returns a new, empty hex set.
+    pub fn new() -> Self
+    {
+        Collection([0; Self::SIZE as usize])
+    }
+
+    /// Removes the given hex from the set.
+    pub fn remove(&mut self, hex: Hex)
+    {
+        let index = self.index_into_list(hex);
+        let write = !(1 << self.index_into_word(hex));
+        self.0[index] &= write;
+    }
+
+    fn index_into_list(&self, hex: Hex) -> usize
+    {
+        hex as usize & Self::MASK as usize
+    }
+
+    fn index_into_word(&self, hex: Hex) -> u64
+    {
+        hex as u64 >> Self::SHFT
+    }
+}

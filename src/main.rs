@@ -42,8 +42,7 @@ fn main() -> Result<()>
 
 fn print_header()
 {
-    println!("{esc}[2J{esc}[2;1H", esc = 27 as char);
-
+    println!("");
     log::info!("🐝 starting {} server v{} 🐝", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
     log::debug!("here be bugs 🐜 🪲  🦗 🐞 🦟 🦠 🕷️");
     log::trace!("... you poor soul.");

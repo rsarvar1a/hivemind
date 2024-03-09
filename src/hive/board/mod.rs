@@ -49,7 +49,7 @@ pub struct Board
     pieces: [Option<Hex>; PIECES],
 
     /// The set of pinned hexes.
-    pinned: HashSet<Hex>,
+    pinned: Collection,
 
     /// Stores the pieces that have not yet been put on the board.
     pouch: Pouch,
@@ -192,7 +192,7 @@ impl Board
             return false;
         }
 
-        if self.pinned.contains(&hex)
+        if self.pinned.contains(hex)
         {
             return true;
         }
@@ -248,7 +248,7 @@ impl Board
         else
         // stack.height() == 1
         {
-            self.pinned.contains(&hex)
+            self.pinned.contains(hex)
         }
     }
 
@@ -277,7 +277,7 @@ impl Board
             immune: None,
             options,
             pieces: [None; PIECES],
-            pinned: HashSet::default(),
+            pinned: Collection::new(),
             pouch: Pouch::new(options),
             stacks: [Stack::default(); SIZE],
             stunned: None,
@@ -349,7 +349,7 @@ impl Board
     }
 
     // Gets all pinned hexes.
-    pub fn pinned_hexes(&self) -> HashSet<Hex>
+    pub fn pinned_hexes(&self) -> Collection
     {
         self.pinned.clone()
     }

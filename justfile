@@ -17,7 +17,7 @@ gdb:
     && gdb --ex=run --args env -i RUST_BACKTRACE=1 target/debug/hivemind
 
 perf:
-    mv perf/graph.svg perf/graph.svg.old
+    touch perf/graph.svg && mv perf/graph.svg perf/graph.old.svg
     -cargo flamegraph --profile flame -o perf/graph.svg
     just perf-save
 
