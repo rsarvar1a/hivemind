@@ -6,8 +6,8 @@ use crate::prelude::*;
 /// A set of height-sensitive hexes useful for performing reachability calculations.
 pub struct Field
 {
-    map: HashMap<Hex, u8>,
-    markers: Collection
+    map:     HashMap<Hex, u8>,
+    markers: Collection,
 }
 
 impl FromIterator<Hex> for Field
@@ -22,10 +22,7 @@ impl FromIterator<Hex> for Field
             markers.insert(*hex);
         }
 
-        Field {
-            map,
-            markers            
-        }
+        Field { map, markers }
     }
 }
 
@@ -39,9 +36,9 @@ impl From<Field> for HashSet<Hex>
 
 impl From<Field> for Collection
 {
-    fn from(value: Field) -> Self 
+    fn from(value: Field) -> Self
     {
-        value.markers    
+        value.markers
     }
 }
 
@@ -132,7 +129,7 @@ impl Field
     {
         // Get the common neighbours between the two hexes to ensure they are neighbours.
         let Some((cw, ccw)) = self.ensure_common_neighbours_satisfied(from, to)
-        else 
+        else
         {
             return false;
         };
@@ -212,7 +209,7 @@ impl Field
     {
         // Get the common neighbours between the two hexes to ensure they are neighbours.
         let Some((cw, ccw)) = self.ensure_common_neighbours_satisfied(from, to)
-        else 
+        else
         {
             return false;
         };
@@ -356,8 +353,8 @@ impl Field
         {
             *o.get_mut() += 1;
         }
-        else 
-        {    
+        else
+        {
             self.map.insert(hex, 1u8);
             self.markers.insert(hex);
         }

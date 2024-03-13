@@ -1,4 +1,5 @@
 use clap::Parser;
+use minimax::{IterativeOptions, ParallelOptions, ParallelSearch, Strategy};
 
 use crate::prelude::*;
 
@@ -18,30 +19,56 @@ pub struct UhpOptions
     /// lowest log level to show
     pub log_level: String,
 
-    #[arg(short, long, default_value_t = 4)]
+    #[arg(short, long, default_value_t = 0)]
     /// number of search threads
     pub num_threads: usize,
+
+    #[arg(short, long, default_value_t = false)]
+    /// whether to print minimax verbose output
+    pub verbose: bool,
 }
 
-pub struct Server<E>
-where
-    E: Evaluator,
+pub struct Server
 {
     #[allow(unused)]
-    options:   UhpOptions,
-    board:     Option<Board>,
-    evaluator: E,
+    options:  UhpOptions,
+    board:    Option<Board>,
+    strategy: minimax::ParallelSearch<HiveEval>,
 }
 
-impl<E: Evaluator> Server<E>
+impl Server
 {
     /// Creates a new server with the given capabilities.
     pub fn new(options: UhpOptions) -> Self
     {
+        let bytes = (options.table_memory * 1e+9).floor() as usize;
+
+        let mut iter_opts = IterativeOptions::new()
+            .with_table_byte_size(bytes)
+            .with_countermoves()
+            .with_null_window_search(true)
+            .with_singular_extension();
+
+        if options.verbose
+        {
+            iter_opts = iter_opts.verbose();
+        }
+
+        let num_threads = if options.num_threads == 0
+        {
+            std::thread::available_parallelism().map(|nzu| nzu.into()).unwrap_or(1)
+        }
+        else
+        {
+            options.num_threads
+        };
+
+        let par_opts = ParallelOptions::new().with_num_threads(num_threads).with_background_pondering();
+
         Server {
-            options:   options.clone(),
-            board:     None,
-            evaluator: E::new(options),
+            options:  options.clone(),
+            board:    None,
+            strategy: ParallelSearch::new(HiveEval {}, iter_opts, par_opts),
         }
     }
 
@@ -64,7 +91,7 @@ impl<E: Evaluator> Server<E>
     }
 }
 
-impl<E: Evaluator> Server<E>
+impl Server
 {
     /// Matches the command to the server's functionality.
     fn apply(&mut self, cmd: &str, args: &[&str]) -> Result<()>
@@ -110,8 +137,14 @@ impl<E: Evaluator> Server<E>
     fn best_move(&mut self, args: &[&str]) -> Result<()>
     {
         let search_args = SearchArgs::parse(args)?;
+        match search_args
+        {
+            | SearchArgs::Depth(d) => self.strategy.set_max_depth(d),
+            | SearchArgs::Time(dur) => self.strategy.set_timeout(dur),
+        };
+
         let board = self.ensure_started()?;
-        let mv = self.evaluator.best_move(&board.clone(), search_args);
+        let mv = self.strategy.choose_move(&board.clone()).unwrap();
 
         println!("{}", Into::<MoveString>::into(mv));
         Ok(())
@@ -147,12 +180,7 @@ impl<E: Evaluator> Server<E>
     /// Prints the server's ID.
     fn info(&self) -> Result<()>
     {
-        println!(
-            "id {} v{} [using eval::{}]",
-            env!("CARGO_PKG_NAME"),
-            env!("CARGO_PKG_VERSION"),
-            Error::type_name::<E>()
-        );
+        println!("id {} v{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"),);
         println!("{};{};{}", Bug::Ladybug.long(), Bug::Mosquito.long(), Bug::Pillbug.long());
         Ok(())
     }
@@ -245,8 +273,14 @@ impl<E: Evaluator> Server<E>
     fn valid_moves(&self) -> Result<()>
     {
         let board = self.ensure_started()?;
-        let moves = evaluators::Basic::generate_moves(board);
-        let movelist = moves.map(|mv| format!("{}", Into::<MoveString>::into(mv))).collect::<Vec<_>>().join(";");
+        let mut moves = Vec::new();
+        board.generate_moves(&mut moves, false);
+
+        let movelist = moves
+            .iter()
+            .map(|mv| format!("{}", Into::<MoveString>::into(*mv)))
+            .collect::<Vec<_>>()
+            .join(";");
         let movelist = if movelist == "" { "pass".into() } else { movelist };
 
         println!("{}", movelist);

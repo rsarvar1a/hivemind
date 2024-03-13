@@ -9,18 +9,20 @@ use crate::prelude::*;
 pub enum SearchArgs
 {
     Time(Duration),
-    Depth(Depth),
+    Depth(u8),
 }
+
+const MAX_DEPTH: u8 = 128;
 
 impl SearchArgs
 {
     /// Determines the hard depth limit.
-    pub fn depth(&self) -> Depth
+    pub fn depth(&self) -> u8
     {
         match self
         {
             | Self::Depth(d) => *d,
-            | Self::Time(_) => Depth::MAX,
+            | Self::Time(_) => MAX_DEPTH,
         }
     }
 
@@ -88,10 +90,10 @@ impl SearchArgs
             }
             | "depth" =>
             {
-                let Ok(depth) = args[1].parse::<u8>().map(Depth::from)
+                let Ok(depth) = args[1].parse::<u8>()
                 else
                 {
-                    let err = Error::for_parse::<Depth>(args[1].to_owned());
+                    let err = Error::for_parse::<u8>(args[1].to_owned());
                     return Err(err.chain(base));
                 };
                 Ok(SearchArgs::Depth(depth))

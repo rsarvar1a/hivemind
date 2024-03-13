@@ -54,7 +54,8 @@ impl BasicMoveGenerator
 {
     pub fn new(board: &Board, standard_position: bool) -> Self
     {
-        let mut moves = board.generate_moves(standard_position);
+        let mut moves = Vec::new();
+        board.generate_moves(&mut moves, standard_position);
 
         if moves.is_empty()
         {

@@ -32,7 +32,7 @@ fn main() -> Result<()>
     print_header();
 
     // Run the main UHP loop.
-    if let Err(e) = Server::<evaluators::Strongest>::new(options).run()
+    if let Err(e) = Server::new(options).run()
     {
         log::error!("fatal error: {}", e);
     }

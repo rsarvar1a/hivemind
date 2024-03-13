@@ -74,8 +74,7 @@ impl Board
 
         // Find which neighbour threw the pillbug.
 
-        self
-            .pieces_neighbouring(from)
+        self.pieces_neighbouring(from)
             .into_iter()
             .filter(|piece| self.can_throw_another(piece))
             .any(|piece| self.check_throw_via_satisfied(from, piece, to))

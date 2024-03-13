@@ -164,12 +164,10 @@ impl Board
     }
 
     /// Generates non-pillbug or non-mosquito-as-pillbug moves.
-    pub fn generate_non_throws(&self, standard_position: bool) -> Vec<Move>
+    pub fn generate_non_throws(&self, moves: &mut Vec<Move>, standard_position: bool)
     {
-        let mut moves: Vec<Move> = Vec::new();
-        self.generate_placements_into(standard_position, &mut moves);
-        self.generate_moves_into(&mut moves);
-        moves
+        self.generate_placements_into(standard_position, moves);
+        self.generate_moves_into(moves);
     }
 
     /// Gets the history of this game.

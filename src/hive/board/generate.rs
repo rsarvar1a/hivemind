@@ -5,10 +5,10 @@ use crate::prelude::*;
 impl Board
 {
     /// Generates all valid moves in the position, not including Pass.
-    pub fn generate_moves(&self, standard_position: bool) -> Vec<Move>
+    pub fn generate_moves(&self, moves: &mut Vec<Move>, standard_position: bool)
     {
-        let mut moves: Vec<Move> = self.generate_non_throws(standard_position);
-        self.generate_throws_into(&mut moves);
+        self.generate_non_throws(moves, standard_position);
+        self.generate_throws_into(moves);
 
         // {
         //     let mut capture = None;
@@ -35,20 +35,18 @@ impl Board
         //         panic!("{}", base);
         //     }
         // }
-
-        moves
     }
 
     /// Only generates tactical moves for quiescence search.
-    pub fn generate_tactical_moves(&self) -> Vec<Move>
+    pub fn generate_tactical_moves(&self, moves: &mut Vec<Move>)
     {
         // Don't waste time here in the opening.
         if self.turn() < 8
         {
-            return Vec::new();
+            moves.clear();
+            return;
         }
 
-        let mut moves: Vec<Move> = Vec::new();
         let past = self.history.get_past();
 
         // Check our last placement to see what its extensions are.
@@ -85,8 +83,8 @@ impl Board
 
                 // Otherwise, this is too quiet, so we should check extensions.
 
-                self.generate_moves_for(&piece, &mut moves);
-                return moves;
+                self.generate_moves_for(&piece, moves);
+                return;
             }
         }
 
@@ -121,11 +119,9 @@ impl Board
 
                 // Otherwise, generate a full subtree.
 
-                moves = self.generate_moves(false);
+                self.generate_moves(moves, false);
             }
         }
-
-        moves
     }
 }
 
@@ -230,8 +226,9 @@ impl Board
             itertools::iproduct!(neighbours.iter(), neighbours.iter())
                 // Check if the source piece is pinned or not.
                 .filter(|(from, _t)| self.top(**from).map(|p| self.ensure_one_hive_satisfied(&p)).unwrap_or(false))
+                // Check if the mover is immune.
+                .filter(|(from, _t)| self.immune.map(|loc| loc != **from).unwrap_or(true))
                 // Check if the piece can throw a bug from the source to the destination tile.
-                // This also checks the immunity state.
                 .filter(|(from, to)| self.check_throw_satisfied(**from, **to))
                 // Then construct the movement by figuring out which piece was thrown.
                 .for_each(|(from, to)| {
@@ -428,13 +425,19 @@ impl Board
             .neighbours(from)
             .into_iter()
             // Get onto the hive with the first movement, only selecting in-hive neighbours.
-            .filter_map(|onto| self.ensure_crawl_satisfied(from, onto, false).then_some((onto, self.field.neighbours(onto))))
+            .filter_map(|onto| {
+                self.ensure_crawl_satisfied(from, onto, false)
+                    .then_some((onto, self.field.neighbours(onto)))
+            })
             // Get the path tuples.
             .flat_map(|(onto, neighbours)| neighbours.into_iter().map(move |h| (onto, h)))
             // Remove any that doubled back to the start hex.
             .filter(|(.., ontop)| *ontop != from)
             // Move from an oh-hive hex to another on-hive hex, and get that destination's neighbours.
-            .filter_map(|(onto, ontop)| self.ensure_crawl_satisfied(onto, ontop, true).then_some((onto, ontop, hex::neighbours(ontop))))
+            .filter_map(|(onto, ontop)| {
+                self.ensure_crawl_satisfied(onto, ontop, true)
+                    .then_some((onto, ontop, hex::neighbours(ontop)))
+            })
             // Get the path tuples.
             .flat_map(|(onto, ontop, neighbours)| neighbours.into_iter().map(move |h| (onto, ontop, h)))
             // Remove any that doubled back to a previous hex.

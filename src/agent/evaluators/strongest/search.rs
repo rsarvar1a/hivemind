@@ -290,7 +290,8 @@ impl StrongestEvaluator
         }
 
         let board = thread_data.board.clone();
-        let moves = board.generate_tactical_moves();
+        let mut moves = Vec::new();
+        board.generate_tactical_moves(&mut moves);
         let mut best_score = MINIMUM_LOSS;
 
         if moves.is_empty()

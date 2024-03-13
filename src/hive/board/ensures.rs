@@ -44,8 +44,7 @@ impl Board
     /// Ensures that a bug can crawl one hex.
     pub(super) fn ensure_crawl_satisfied(&self, from: Hex, to: Hex, ghosting: bool) -> bool
     {
-        self.field
-            .ensure_constant_contact_satisfied(from, to, ghosting) && self.field.ensure_freedom_to_move_satisfied(from, to, ghosting)
+        self.field.ensure_constant_contact_satisfied(from, to, ghosting) && self.field.ensure_freedom_to_move_satisfied(from, to, ghosting)
     }
 
     #[inline]
@@ -177,7 +176,7 @@ impl Board
 
     pub(super) fn ensure_one_hive_satisfied(&self, piece: &Piece) -> bool
     {
-        ! self.is_pinned(piece)
+        !self.is_pinned(piece)
     }
 
     #[inline]
